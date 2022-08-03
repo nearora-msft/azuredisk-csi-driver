@@ -19,6 +19,7 @@ package azuredisk
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -30,11 +31,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/mount-utils"
 
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	vopclientset "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/azuredisk/v1alpha1"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 	csicommon "sigs.k8s.io/azuredisk-csi-driver/pkg/csi-common"
@@ -45,7 +50,20 @@ import (
 	azurecloudconsts "sigs.k8s.io/cloud-provider-azure/pkg/consts"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var (
+	scheme   = runtime.NewScheme()
+	setupLog = logf.Log.WithName("setup")
+)
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(vopclientset.AddToScheme(scheme))
+	//+kubebuilder:scaffold:scheme
+}
 
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
@@ -66,6 +84,7 @@ type DriverOptions struct {
 	SupportZone                bool
 	GetNodeInfoFromLabels      bool
 	EnableDiskCapacityCheck    bool
+	isNodePlugin               bool
 }
 
 // CSIDriver defines the interface for a CSI driver.
@@ -105,6 +124,7 @@ type DriverCore struct {
 	supportZone                bool
 	getNodeInfoFromLabels      bool
 	enableDiskCapacityCheck    bool
+	isNodePlugin               bool
 }
 
 // Driver is the v1 implementation of the Azure Disk CSI Driver.
@@ -137,6 +157,7 @@ func newDriverV1(options *DriverOptions) *Driver {
 	driver.supportZone = options.SupportZone
 	driver.getNodeInfoFromLabels = options.GetNodeInfoFromLabels
 	driver.enableDiskCapacityCheck = options.EnableDiskCapacityCheck
+	driver.isNodePlugin = options.isNodePlugin
 	driver.volumeLocks = volumehelper.NewVolumeLocks()
 	driver.ioHandler = azureutils.NewOSIOHandler()
 	driver.hostUtil = hostutil.NewHostUtil()
@@ -230,6 +251,25 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 		csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
 	})
+
+	if d.NodeID != "" {
+		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+			Scheme: scheme,
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to start manager")
+			os.Exit(1)
+		}
+
+		if err = (&VolumeOperationReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "CronJob")
+			os.Exit(1)
+		}
+
+	}
 
 	s := csicommon.NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer

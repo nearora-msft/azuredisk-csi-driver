@@ -36,3 +36,12 @@ type AzVolumeOperationStatus struct {
 	State string `json:"state"`
 	Lun   int    `json:"lun"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+type AzVolumeOperationList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []AzVolumeOperation `json:"items"`
+}
