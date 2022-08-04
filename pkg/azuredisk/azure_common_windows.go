@@ -20,9 +20,11 @@ limitations under the License.
 package azuredisk
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
 	"k8s.io/mount-utils"
@@ -81,9 +83,10 @@ func preparePublishPath(path string, m *mount.SafeFormatAndMount) error {
 }
 
 func CleanupMountPoint(path string, m *mount.SafeFormatAndMount, extensiveCheck bool) error {
-	// CSI proxy alpha does not support fixing the corrupted directory. So we will
-	// just do the unmount for now.
-	return m.Unmount(path)
+	if proxy, ok := m.Interface.(mounter.CSIProxyMounter); ok {
+		return proxy.Unmount(path)
+	}
+	return fmt.Errorf("could not cast to csi proxy class")
 }
 
 func getDevicePathWithMountPath(mountPath string, m *mount.SafeFormatAndMount) (string, error) {
@@ -144,6 +147,11 @@ func resizeVolume(devicePath, volumePath string, m *mount.SafeFormatAndMount) er
 	return nil
 }
 
+// needResizeVolume check whether device needs resize
+func needResizeVolume(devicePath, volumePath string, m *mount.SafeFormatAndMount) (bool, error) {
+	return false, nil
+}
+
 // rescanVolume rescan device for detecting device size expansion
 func rescanVolume(io azureutils.IOHandler, devicePath string) error {
 	return nil
@@ -152,4 +160,12 @@ func rescanVolume(io azureutils.IOHandler, devicePath string) error {
 // rescanAllVolumes rescan all devices
 func rescanAllVolumes(io azureutils.IOHandler) error {
 	return nil
+}
+
+func GetVolumeStats(ctx context.Context, m *mount.SafeFormatAndMount, target string, hostutil hostUtil) ([]*csi.VolumeUsage, error) {
+	if proxy, ok := m.Interface.(mounter.CSIProxyMounter); ok {
+		volUsage, err := proxy.GetVolumeStats(ctx, target)
+		return []*csi.VolumeUsage{volUsage}, err
+	}
+	return []*csi.VolumeUsage{}, fmt.Errorf("could not cast to csi proxy class")
 }

@@ -28,8 +28,8 @@ const (
 	DefaultCredFilePathWindows    = "C:\\k\\azure.json"
 	DefaultDriverName             = "disk.csi.azure.com"
 	DesIDField                    = "diskencryptionsetid"
+	DiskEncryptionTypeField       = "diskencryptiontype"
 	DiskAccessIDField             = "diskaccessid"
-	DiskEncryptionSetID           = "diskencryptionsetid"
 	DiskIOPSReadWriteField        = "diskiopsreadwrite"
 	DiskMBPSReadWriteField        = "diskmbpsreadwrite"
 	DiskNameField                 = "diskname"
@@ -80,6 +80,12 @@ const (
 	EnableAsyncAttachField        = "enableasyncattach"
 	TooManyRequests               = "TooManyRequests"
 	ClientThrottled               = "client throttled"
+	VolumeID                      = "volumeid"
+	Node                          = "node"
+	SourceResourceID              = "source_resource_id"
+	SnapshotName                  = "snapshot_name"
+	SnapshotID                    = "snapshot_id"
+	VolumeOperationManagedBy      = "disk.csi.azure.com/managed-by"
 	// define different sleep time when hit throttling
 	SnapshotOpThrottlingSleepSec = 50
 )

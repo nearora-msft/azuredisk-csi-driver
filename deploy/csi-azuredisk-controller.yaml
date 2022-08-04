@@ -26,15 +26,19 @@ spec:
         - key: "node-role.kubernetes.io/controlplane"
           operator: "Exists"
           effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
       containers:
         - name: csi-provisioner
-          image: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner:v3.1.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner:v3.2.0
           args:
             - "--feature-gates=Topology=true"
             - "--csi-address=$(ADDRESS)"
             - "--v=2"
             - "--timeout=15s"
             - "--leader-election"
+            - "--leader-election-namespace=kube-system"
             - "--worker-threads=40"
             - "--extra-create-metadata=true"
             - "--strict-topology=true"
@@ -51,12 +55,13 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: csi-attacher
-          image: mcr.microsoft.com/oss/kubernetes-csi/csi-attacher:v3.4.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-attacher:v3.5.0
           args:
             - "-v=2"
             - "-csi-address=$(ADDRESS)"
             - "-timeout=600s"
             - "-leader-election"
+            - "--leader-election-namespace=kube-system"
             - "-worker-threads=500"
           env:
             - name: ADDRESS
@@ -75,6 +80,7 @@ spec:
           args:
             - "-csi-address=$(ADDRESS)"
             - "-leader-election"
+            - "--leader-election-namespace=kube-system"
             - "--v=2"
           env:
             - name: ADDRESS
@@ -89,11 +95,12 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: csi-resizer
-          image: mcr.microsoft.com/oss/kubernetes-csi/csi-resizer:v1.4.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-resizer:v1.5.0
           args:
             - "-csi-address=$(ADDRESS)"
             - "-v=2"
             - "-leader-election"
+            - "--leader-election-namespace=kube-system"
             - '-handle-volume-inuse-error=false'
             - '-feature-gates=RecoverVolumeExpansionFailure=true'
             - "-timeout=240s"
@@ -110,7 +117,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: liveness-probe
-          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.5.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.7.0
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=3s

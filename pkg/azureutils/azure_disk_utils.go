@@ -104,6 +104,7 @@ type ManagedDiskParameters struct {
 	CachingMode             v1.AzureDataDiskCachingMode
 	DiskAccessID            string
 	DiskEncryptionSetID     string
+	DiskEncryptionType      string
 	DiskIOPSReadWrite       string
 	DiskMBPSReadWrite       string
 	DiskName                string
@@ -162,7 +163,7 @@ func GetCloudProviderFromClient(kubeClient *clientset.Clientset, secretName, sec
 			fromSecret = true
 		}
 		if err != nil {
-			klog.Warningf("InitializeCloudFromSecret: failed to get cloud config from secret %s/%s: %v", az.SecretNamespace, az.SecretName, err)
+			klog.V(2).Infof("InitializeCloudFromSecret: failed to get cloud config from secret %s/%s: %v", az.SecretNamespace, az.SecretName, err)
 		}
 	}
 
@@ -287,7 +288,6 @@ func GetDiskName(diskURI string) (string, error) {
 // Disk name must begin with a letter or number, end with a letter, number or underscore,
 // and may contain only letters, numbers, underscores, periods, or hyphens.
 // See https://docs.microsoft.com/en-us/rest/api/compute/disks/createorupdate#uri-parameters
-//
 //
 // Snapshot name must begin with a letter or number, end with a letter, number or underscore,
 // and may contain only letters, numbers, underscores, periods, or hyphens.
@@ -512,6 +512,19 @@ func NormalizeStorageAccountType(storageAccountType, cloud string, disableAzureS
 	return "", fmt.Errorf("azureDisk - %s is not supported sku/storageaccounttype. Supported values are %s", storageAccountType, supportedSkuNames)
 }
 
+func ValidateDiskEncryptionType(encryptionType string) error {
+	if encryptionType == "" {
+		return nil
+	}
+	supportedTypes := compute.PossibleEncryptionTypeValues()
+	for _, s := range supportedTypes {
+		if encryptionType == string(s) {
+			return nil
+		}
+	}
+	return fmt.Errorf("DiskEncryptionType(%s) is not supported", encryptionType)
+}
+
 func ParseDiskParameters(parameters map[string]string) (ManagedDiskParameters, error) {
 	var err error
 	if parameters == nil {
@@ -550,6 +563,8 @@ func ParseDiskParameters(parameters map[string]string) (ManagedDiskParameters, e
 			diskParams.DiskName = v
 		case consts.DesIDField:
 			diskParams.DiskEncryptionSetID = v
+		case consts.DiskEncryptionTypeField:
+			diskParams.DiskEncryptionType = v
 		case consts.TagsField:
 			customTagsMap, err := util.ConvertTagsToMap(v)
 			if err != nil {

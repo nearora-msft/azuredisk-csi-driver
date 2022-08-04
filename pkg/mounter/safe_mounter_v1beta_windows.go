@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	disk "github.com/kubernetes-csi/csi-proxy/client/api/disk/v1beta2"
 	diskclient "github.com/kubernetes-csi/csi-proxy/client/groups/disk/v1beta2"
 
@@ -63,8 +64,9 @@ func (mounter *csiProxyMounterV1Beta) Mount(source string, target string, fstype
 
 // Rmdir - delete the given directory
 // TODO: Call separate rmdir for pod context and plugin context. v1alpha1 for CSI
-//       proxy does a relaxed check for prefix as c:\var\lib\kubelet, so we can do
-//       rmdir with either pod or plugin context.
+//
+//	proxy does a relaxed check for prefix as c:\var\lib\kubelet, so we can do
+//	rmdir with either pod or plugin context.
 func (mounter *csiProxyMounterV1Beta) Rmdir(path string) error {
 	rmdirRequest := &fs.RmdirRequest{
 		Path:    normalizeWindowsPath(path),
@@ -104,8 +106,9 @@ func (mounter *csiProxyMounterV1Beta) IsMountPointMatch(mp mount.MountPoint, dir
 }
 
 // IsLikelyMountPoint - If the directory does not exists, the function will return os.ErrNotExist error.
-//   If the path exists, call to CSI proxy will check if its a link, if its a link then existence of target
-//   path is checked.
+//
+//	If the path exists, call to CSI proxy will check if its a link, if its a link then existence of target
+//	path is checked.
 func (mounter *csiProxyMounterV1Beta) IsLikelyNotMountPoint(path string) (bool, error) {
 	isExists, err := mounter.ExistsPath(path)
 	if err != nil {
@@ -319,6 +322,26 @@ func (mounter *csiProxyMounterV1Beta) GetVolumeSizeInBytes(devicePath string) (i
 	}
 
 	return resp.VolumeSize, nil
+}
+
+// GetVolumeStats get volume usage
+func (mounter *csiProxyMounterV1Beta) GetVolumeStats(ctx context.Context, path string) (*csi.VolumeUsage, error) {
+	volIDResp, err := mounter.VolumeClient.GetVolumeIDFromMount(ctx, &volume.VolumeIDFromMountRequest{Mount: path})
+	if err != nil || volIDResp == nil {
+		return nil, fmt.Errorf("GetVolumeIDFromMount(%s) failed with error: %v, response: %v", path, err, volIDResp)
+	}
+	klog.V(6).Infof("GetVolumeStats(%s) returned volumeID(%s)", path, volIDResp.VolumeId)
+	resp, err := mounter.VolumeClient.VolumeStats(ctx, &volume.VolumeStatsRequest{VolumeId: volIDResp.VolumeId})
+	if err != nil || resp == nil {
+		return nil, fmt.Errorf("GetVolumeStats(%s) failed with error: %v, response: %v", volIDResp.VolumeId, err, resp)
+	}
+	volUsage := &csi.VolumeUsage{
+		Unit:      csi.VolumeUsage_BYTES,
+		Available: resp.VolumeSize - resp.VolumeUsedSize,
+		Total:     resp.VolumeSize,
+		Used:      resp.VolumeUsedSize,
+	}
+	return volUsage, nil
 }
 
 // GetAPIVersions returns the versions of the client APIs this mounter is using.

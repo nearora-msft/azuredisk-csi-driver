@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/optimization"
@@ -40,8 +41,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/volume"
-	mount "k8s.io/mount-utils"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 )
@@ -144,28 +143,29 @@ func (d *DriverV2) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolume
 
 	// FormatAndMount will format only if needed
 	klog.V(2).Infof("NodeStageVolume: formatting %s and mounting at %s with mount options(%s)", source, target, options)
-	err = d.formatAndMount(source, target, fstype, options)
-	if err != nil {
-		msg := fmt.Sprintf("could not format %q(lun: %q), and mount it at %q", source, lun, target)
-		return nil, status.Error(codes.Internal, msg)
+	if err := d.formatAndMount(source, target, fstype, options); err != nil {
+		return nil, status.Errorf(codes.Internal, "could not format %s(lun: %s), and mount it at %s", source, lun, target)
 	}
 	klog.V(2).Infof("NodeStageVolume: format %s and mounting at %s successfully.", source, target)
 
-	// if resize is required, resize filesystem
-	if required, ok := req.GetVolumeContext()[consts.ResizeRequired]; ok && required == "true" {
-		klog.V(2).Infof("NodeStageVolume: fs resize initiating on target(%s) volumeid(%s)", target, diskURI)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "NodeStageVolume: could not get volume path for %s: %v", target, err)
+	var needResize bool
+	if required, ok := req.GetVolumeContext()[consts.ResizeRequired]; ok && strings.EqualFold(required, consts.TrueValue) {
+		needResize = true
+	}
+	if !needResize {
+		if needResize, err = needResizeVolume(source, target, d.mounter); err != nil {
+			klog.Errorf("NodeStageVolume: could not determine if volume %s needs to be resized: %v", diskURI, err)
 		}
-
-		resizer := mount.NewResizeFs(d.mounter.Exec)
-		if _, err := resizer.Resize(source, target); err != nil {
-			return nil, status.Errorf(codes.Internal, "NodeStageVolume: could not resize volume %q (%q):  %v", diskURI, source, err)
-		}
-
-		klog.V(2).Infof("NodeStageVolume: fs resize successful on target(%s) volumeid(%s).", target, diskURI)
 	}
 
+	// if resize is required, resize filesystem
+	if needResize {
+		klog.V(2).Infof("NodeStageVolume: fs resize initiating on target(%s) volumeid(%s)", target, diskURI)
+		if err := resizeVolume(source, target, d.mounter); err != nil {
+			return nil, status.Errorf(codes.Internal, "NodeStageVolume: could not resize volume %s (%s):  %v", source, target, err)
+		}
+		klog.V(2).Infof("NodeStageVolume: fs resize successful on target(%s) volumeid(%s).", target, diskURI)
+	}
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -255,9 +255,8 @@ func (d *DriverV2) NodePublishVolume(ctx context.Context, req *csi.NodePublishVo
 			return nil, status.Errorf(codes.Internal, "failed to find device path with lun %s. %v", lun, err)
 		}
 		klog.V(2).Infof("NodePublishVolume [block]: found device path %s with lun %s", source, lun)
-		err = d.ensureBlockTargetFile(target)
-		if err != nil {
-			return nil, err
+		if err = d.ensureBlockTargetFile(target); err != nil {
+			return nil, status.Errorf(codes.Internal, err.Error())
 		}
 	case *csi.VolumeCapability_Mount:
 		mnt, err := d.ensureMountPoint(target)
@@ -407,80 +406,10 @@ func (d *DriverV2) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolum
 		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume path was empty")
 	}
 
-	_, err := os.Stat(req.VolumePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, status.Errorf(codes.NotFound, "path %s does not exist", req.VolumePath)
-		}
-		return nil, status.Errorf(codes.Internal, "failed to stat file %s: %v", req.VolumePath, err)
-	}
-
-	isBlock, err := d.getHostUtil().PathIsDevice(req.VolumePath)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "failed to determine whether %s is block device: %v", req.VolumePath, err)
-	}
-	if isBlock {
-		bcap, err := getBlockSizeBytes(req.VolumePath, d.mounter)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get block capacity on path %s: %v", req.VolumePath, err)
-		}
-		return &csi.NodeGetVolumeStatsResponse{
-			Usage: []*csi.VolumeUsage{
-				{
-					Unit:  csi.VolumeUsage_BYTES,
-					Total: bcap,
-				},
-			},
-		}, nil
-	}
-
-	volumeMetrics, err := volume.NewMetricsStatFS(req.VolumePath).GetMetrics()
-	if err != nil {
-		return nil, err
-	}
-
-	available, ok := volumeMetrics.Available.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform volume available size(%v)", volumeMetrics.Available)
-	}
-	capacity, ok := volumeMetrics.Capacity.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform volume capacity size(%v)", volumeMetrics.Capacity)
-	}
-	used, ok := volumeMetrics.Used.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform volume used size(%v)", volumeMetrics.Used)
-	}
-
-	inodesFree, ok := volumeMetrics.InodesFree.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes free(%v)", volumeMetrics.InodesFree)
-	}
-	inodes, ok := volumeMetrics.Inodes.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes(%v)", volumeMetrics.Inodes)
-	}
-	inodesUsed, ok := volumeMetrics.InodesUsed.AsInt64()
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes used(%v)", volumeMetrics.InodesUsed)
-	}
-
+	volUsage, err := GetVolumeStats(ctx, d.mounter, req.VolumePath, d.hostUtil)
 	return &csi.NodeGetVolumeStatsResponse{
-		Usage: []*csi.VolumeUsage{
-			{
-				Unit:      csi.VolumeUsage_BYTES,
-				Available: available,
-				Total:     capacity,
-				Used:      used,
-			},
-			{
-				Unit:      csi.VolumeUsage_INODES,
-				Available: inodesFree,
-				Total:     inodes,
-				Used:      inodesUsed,
-			},
-		},
-	}, nil
+		Usage: volUsage,
+	}, err
 }
 
 // NodeExpandVolume node expand volume
