@@ -57,7 +57,7 @@ type azVolumeOperations struct {
 }
 
 // newAzVolumeOperations returns a AzVolumeOperations
-func newAzVolumeOperations(c *AzstorV1alpha1Client, namespace string) *azVolumeOperations {
+func newAzVolumeOperations(c *DiskV1alpha1Client, namespace string) *azVolumeOperations {
 	return &azVolumeOperations{
 		client: c.RESTClient(),
 		ns:     namespace,

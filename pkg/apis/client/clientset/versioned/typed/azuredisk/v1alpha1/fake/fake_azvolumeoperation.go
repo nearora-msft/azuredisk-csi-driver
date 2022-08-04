@@ -32,13 +32,13 @@ import (
 
 // FakeAzVolumeOperations implements AzVolumeOperationInterface
 type FakeAzVolumeOperations struct {
-	Fake *FakeAzstorV1alpha1
+	Fake *FakeDiskV1alpha1
 	ns   string
 }
 
-var azvolumeoperationsResource = schema.GroupVersionResource{Group: "azstor.azure.com", Version: "v1alpha1", Resource: "azvolumeoperations"}
+var azvolumeoperationsResource = schema.GroupVersionResource{Group: "disk.csi.azure.com", Version: "v1alpha1", Resource: "azvolumeoperations"}
 
-var azvolumeoperationsKind = schema.GroupVersionKind{Group: "azstor.azure.com", Version: "v1alpha1", Kind: "AzVolumeOperation"}
+var azvolumeoperationsKind = schema.GroupVersionKind{Group: "disk.csi.azure.com", Version: "v1alpha1", Kind: "AzVolumeOperation"}
 
 // Get takes name of the azVolumeOperation, and returns the corresponding azVolumeOperation object, and an error if there is any.
 func (c *FakeAzVolumeOperations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.AzVolumeOperation, err error) {

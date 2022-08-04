@@ -24,17 +24,17 @@ import (
 	v1alpha1 "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/typed/azuredisk/v1alpha1"
 )
 
-type FakeAzstorV1alpha1 struct {
+type FakeDiskV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeAzstorV1alpha1) AzVolumeOperations(namespace string) v1alpha1.AzVolumeOperationInterface {
+func (c *FakeDiskV1alpha1) AzVolumeOperations(namespace string) v1alpha1.AzVolumeOperationInterface {
 	return &FakeAzVolumeOperations{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeAzstorV1alpha1) RESTClient() rest.Interface {
+func (c *FakeDiskV1alpha1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

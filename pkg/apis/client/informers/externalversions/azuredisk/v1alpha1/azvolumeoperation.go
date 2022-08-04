@@ -62,13 +62,13 @@ func NewFilteredAzVolumeOperationInformer(client versioned.Interface, namespace 
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AzstorV1alpha1().AzVolumeOperations(namespace).List(context.TODO(), options)
+				return client.DiskV1alpha1().AzVolumeOperations(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AzstorV1alpha1().AzVolumeOperations(namespace).Watch(context.TODO(), options)
+				return client.DiskV1alpha1().AzVolumeOperations(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&azurediskv1alpha1.AzVolumeOperation{},

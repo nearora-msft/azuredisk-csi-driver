@@ -172,9 +172,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Azstor() azuredisk.Interface
+	Disk() azuredisk.Interface
 }
 
-func (f *sharedInformerFactory) Azstor() azuredisk.Interface {
+func (f *sharedInformerFactory) Disk() azuredisk.Interface {
 	return azuredisk.New(f, f.namespace, f.tweakListOptions)
 }

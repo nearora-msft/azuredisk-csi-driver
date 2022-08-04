@@ -15,6 +15,6 @@ limitations under the License.
 */
 
 // +k8s:deepcopy-gen=package
-// +groupName=azstor.azure.com
+// +groupName=disk.csi.azure.com
 
 package v1alpha1

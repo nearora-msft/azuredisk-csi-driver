@@ -25,8 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned"
-	azstorv1alpha1 "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/typed/azuredisk/v1alpha1"
-	fakeazstorv1alpha1 "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/typed/azuredisk/v1alpha1/fake"
+	diskv1alpha1 "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/typed/azuredisk/v1alpha1"
+	fakediskv1alpha1 "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/typed/azuredisk/v1alpha1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -79,7 +79,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// AzstorV1alpha1 retrieves the AzstorV1alpha1Client
-func (c *Clientset) AzstorV1alpha1() azstorv1alpha1.AzstorV1alpha1Interface {
-	return &fakeazstorv1alpha1.FakeAzstorV1alpha1{Fake: &c.Fake}
+// DiskV1alpha1 retrieves the DiskV1alpha1Client
+func (c *Clientset) DiskV1alpha1() diskv1alpha1.DiskV1alpha1Interface {
+	return &fakediskv1alpha1.FakeDiskV1alpha1{Fake: &c.Fake}
 }

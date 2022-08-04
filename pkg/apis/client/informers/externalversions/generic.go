@@ -52,9 +52,9 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=azstor.azure.com, Version=v1alpha1
+	// Group=disk.csi.azure.com, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("azvolumeoperations"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Azstor().V1alpha1().AzVolumeOperations().Informer()}, nil
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Disk().V1alpha1().AzVolumeOperations().Informer()}, nil
 
 	}
 

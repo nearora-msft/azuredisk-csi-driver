@@ -15,7 +15,9 @@ type AzVolumeOperation struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AzVolumeOperationSpec   `json:"spec"`
+	Spec AzVolumeOperationSpec `json:"spec"`
+
+	//+optional
 	Status AzVolumeOperationStatus `json:"status"`
 }
 

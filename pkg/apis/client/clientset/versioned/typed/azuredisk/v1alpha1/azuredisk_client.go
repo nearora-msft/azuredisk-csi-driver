@@ -26,24 +26,24 @@ import (
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/scheme"
 )
 
-type AzstorV1alpha1Interface interface {
+type DiskV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	AzVolumeOperationsGetter
 }
 
-// AzstorV1alpha1Client is used to interact with features provided by the azstor.azure.com group.
-type AzstorV1alpha1Client struct {
+// DiskV1alpha1Client is used to interact with features provided by the disk.csi.azure.com group.
+type DiskV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *AzstorV1alpha1Client) AzVolumeOperations(namespace string) AzVolumeOperationInterface {
+func (c *DiskV1alpha1Client) AzVolumeOperations(namespace string) AzVolumeOperationInterface {
 	return newAzVolumeOperations(c, namespace)
 }
 
-// NewForConfig creates a new AzstorV1alpha1Client for the given config.
+// NewForConfig creates a new DiskV1alpha1Client for the given config.
 // NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
 // where httpClient was generated with rest.HTTPClientFor(c).
-func NewForConfig(c *rest.Config) (*AzstorV1alpha1Client, error) {
+func NewForConfig(c *rest.Config) (*DiskV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func NewForConfig(c *rest.Config) (*AzstorV1alpha1Client, error) {
 	return NewForConfigAndClient(&config, httpClient)
 }
 
-// NewForConfigAndClient creates a new AzstorV1alpha1Client for the given config and http client.
+// NewForConfigAndClient creates a new DiskV1alpha1Client for the given config and http client.
 // Note the http client provided takes precedence over the configured transport values.
-func NewForConfigAndClient(c *rest.Config, h *http.Client) (*AzstorV1alpha1Client, error) {
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*DiskV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -66,12 +66,12 @@ func NewForConfigAndClient(c *rest.Config, h *http.Client) (*AzstorV1alpha1Clien
 	if err != nil {
 		return nil, err
 	}
-	return &AzstorV1alpha1Client{client}, nil
+	return &DiskV1alpha1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new AzstorV1alpha1Client for the given config and
+// NewForConfigOrDie creates a new DiskV1alpha1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *AzstorV1alpha1Client {
+func NewForConfigOrDie(c *rest.Config) *DiskV1alpha1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -79,9 +79,9 @@ func NewForConfigOrDie(c *rest.Config) *AzstorV1alpha1Client {
 	return client
 }
 
-// New creates a new AzstorV1alpha1Client for the given RESTClient.
-func New(c rest.Interface) *AzstorV1alpha1Client {
-	return &AzstorV1alpha1Client{c}
+// New creates a new DiskV1alpha1Client for the given RESTClient.
+func New(c rest.Interface) *DiskV1alpha1Client {
+	return &DiskV1alpha1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -99,7 +99,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *AzstorV1alpha1Client) RESTClient() rest.Interface {
+func (c *DiskV1alpha1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}
