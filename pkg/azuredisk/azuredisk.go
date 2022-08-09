@@ -265,16 +265,20 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 
 		stopCh := make(chan struct{})
 
-		klog.Infof("Starting informer factory")
-		azurediskInformerFactory.Start(stopCh)
+		go func() {
+			klog.Infof("Starting informer factory")
+			azurediskInformerFactory.Start(stopCh)
 
-		klog.Infof("Creating notification channel")
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		<-c
-		close(stopCh)
+			klog.Infof("Creating notification channel")
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, os.Interrupt)
+			<-c
+			close(stopCh)
 
-		klog.Infof("Created notification channel")
+			klog.Infof("Created notification channel")
+
+		}()
+
 	}
 
 	if d.vmssCacheTTLInSeconds > 0 {

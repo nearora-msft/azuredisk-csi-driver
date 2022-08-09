@@ -372,7 +372,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 
 	volumeOperation := v1alpha1.AzVolumeOperation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "TestOperation",
+			Name: "azvolumeoperation1",
 			Labels: map[string]string{
 				consts.VolumeOperationManagedBy: req.GetNodeId(),
 			},
@@ -493,7 +493,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	client, err := azureutils.GetKubeConfig(d.kubeconfig)
 	clientSet, err := azdisk.NewForConfig(client)
 
-	vop, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "TestOperation", metav1.GetOptions{})
+	vop, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "azvolumeoperation1", metav1.GetOptions{})
 	if err != nil {
 		klog.Infof("Error occured while getting the volumes %v", err)
 	}
@@ -509,7 +509,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 	conditionFunc := func() (bool, error) {
 		var err error
-		vop, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "TestOperation", metav1.GetOptions{})
+		vop, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "azvolumeoperation1", metav1.GetOptions{})
 		if vop.Status.State == v1alpha1.VolumeDetached {
 			return true, nil
 		}
@@ -525,7 +525,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 
 	copyForupdate = vop.DeepCopy()
-	vop.ObjectMeta.Finalizers = []string{}
+	copyForupdate.ObjectMeta.Finalizers = []string{}
 
 	_, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Update(context.Background(), copyForupdate, metav1.UpdateOptions{})
 
@@ -533,7 +533,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		klog.Infof("Error occured while removing the finalizers: %v", err)
 	}
 
-	if err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Delete(context.Background(), "TestOperation", metav1.DeleteOptions{}); err != nil {
+	if err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Delete(context.Background(), "azvolumeoperation1", metav1.DeleteOptions{}); err != nil {
 		klog.Errorf("Error occured while deleting the AzVolumeOperation: %v", err)
 	}
 
