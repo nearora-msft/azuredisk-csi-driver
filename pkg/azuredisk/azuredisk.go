@@ -236,7 +236,7 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 					copyForUpdate := azVolumeOperation1.DeepCopy()
 					copyForUpdate.Status = v1alpha1.AzVolumeOperationStatus{
 						Lun:   0,
-						State: "Attached",
+						State: v1alpha1.VolumeAttached,
 					}
 
 					klog.Infof("Starting the update operation with namespace: %s", copyForUpdate.Namespace)
