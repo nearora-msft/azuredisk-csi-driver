@@ -21,22 +21,29 @@ type AzVolumeOperation struct {
 	Status AzVolumeOperationStatus `json:"status"`
 }
 
-type AzVolumeOperationSpec struct {
-	BlobUrl   string `json:"blobUrl"`
-	DSASToken string `json:"dsasToken"`
-}
-
-type AzVolumeState string
+type RequestedOperation string
 
 const (
-	VolumeAttaching AzVolumeState = "Attaching"
-	VolumeDetaching AzVolumeState = "Detaching"
-	VolumeAttached  AzVolumeState = "Attached"
+	Attach RequestedOperation = "Attach"
+	Detach RequestedOperation = "Detach"
+)
+
+type AzVolumeOperationSpec struct {
+	BlobUrl            string             `json:"blobUrl"`
+	DSASToken          string             `json:"dsasToken"`
+	RequestedOperation RequestedOperation `json:"requestedOperation"`
+}
+
+type AzVolumeOperationState string
+
+const (
+	VolumeDetached AzVolumeOperationState = "Detached"
+	VolumeAttached AzVolumeOperationState = "Attached"
 )
 
 type AzVolumeOperationStatus struct {
-	State string `json:"state"`
-	Lun   int    `json:"lun"`
+	State AzVolumeOperationState `json:"state"`
+	Lun   int                    `json:"lun"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
