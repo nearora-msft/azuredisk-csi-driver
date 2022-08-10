@@ -30,7 +30,7 @@ const (
 )
 
 type AzVolumeOperationSpec struct {
-	BlobUrl            string             `json:"blobUrl"`
+	DiskURI            string             `json:"diskUri"`
 	DSASToken          string             `json:"dsasToken"`
 	RequestedOperation RequestedOperation `json:"requestedOperation"`
 }
@@ -44,7 +44,7 @@ const (
 
 type AzVolumeOperationStatus struct {
 	State AzVolumeOperationState `json:"state"`
-	Lun   int                    `json:"lun"`
+	Lun   string                 `json:"lun"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

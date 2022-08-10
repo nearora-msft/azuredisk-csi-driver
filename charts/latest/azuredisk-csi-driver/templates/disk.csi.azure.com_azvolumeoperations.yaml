@@ -41,21 +41,21 @@ spec:
             type: object
           spec:
             properties:
-              blobUrl:
+              diskUri:
                 type: string
               dsasToken:
                 type: string
               requestedOperation:
                 type: string
             required:
-            - blobUrl
+            - diskUri
             - dsasToken
             - requestedOperation
             type: object
           status:
             properties:
               lun:
-                type: integer
+                type: string
               state:
                 type: string
             required:

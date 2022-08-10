@@ -30,6 +30,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +39,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/apis/azuredisk/v1alpha1"
-	azdisk "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
@@ -333,7 +333,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "Volume capability not supported")
 	}
 
-	_, err = d.checkDiskExists(ctx, diskURI)
+	disk, err := d.checkDiskExists(ctx, diskURI)
 	if err != nil {
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("Volume not found, failed with error: %v", err))
 	}
@@ -355,112 +355,95 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI, consts.Node, string(nodeName))
 	}()
 
-	lun, _, err := d.cloud.GetDiskLun(diskName, diskURI, nodeName)
+	lun, vmState, err := d.cloud.GetDiskLun(diskName, diskURI, nodeName)
 	if err == cloudprovider.InstanceNotFound {
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("failed to get azure instance id for node %q (%v)", nodeName, err))
 	}
 
-	klog.V(2).Infof("GetDiskLun returned: %v. Initiating attaching volume %s to node %s.", err, diskURI, nodeName)
+	vmStateStr := "<nil>"
+	if vmState != nil {
+		vmStateStr = *vmState
+	}
+
+	klog.V(2).Infof("GetDiskLun returned: %v. Initiating attaching volume %s to node %s (vmState %s).", err, diskURI, nodeName, vmStateStr)
 
 	volumeContext := req.GetVolumeContext()
 	if volumeContext == nil {
 		volumeContext = map[string]string{}
 	}
 
-	client, err := azureutils.GetKubeConfig(d.kubeconfig)
-	clientSet, err := azdisk.NewForConfig(client)
+	if err == nil {
+		if vmState != nil && strings.ToLower(*vmState) == "failed" {
+			klog.Warningf("VM(%s) is in failed state, update VM first", nodeName)
+			if err := d.cloud.UpdateVM(ctx, nodeName); err != nil {
+				return nil, status.Errorf(codes.Internal, "update instance %q failed with %v", nodeName, err)
+			}
+		}
+		// Volume is already attached to node.
+		klog.V(2).Infof("Attach operation is successful. volume %s is already attached to node %s at lun %d.", diskURI, nodeName, lun)
+	} else {
 
-	volumeOperation := v1alpha1.AzVolumeOperation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "azvolumeoperation1",
-			Labels: map[string]string{
-				consts.VolumeOperationManagedBy: req.GetNodeId(),
+		// Todo: Get the DSAS token from the DiskRP
+		dSASToken := "placeholder_dsas"
+
+		// Attach the disk to the node
+		volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
+
+		volumeOperation := v1alpha1.AzVolumeOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: volumeOperationName,
+				Labels: map[string]string{
+					consts.VolumeOperationManagedBy: req.GetNodeId(),
+				},
+				Finalizers: []string{consts.AzVolumeOperationFinalizer},
 			},
-			Finalizers: []string{consts.AzVolumeOperationFinalizer},
-		},
-		Spec: v1alpha1.AzVolumeOperationSpec{
-			BlobUrl:            "TestUrl",
-			DSASToken:          "TestToken",
-			RequestedOperation: v1alpha1.Attach,
-		},
-	}
+			Spec: v1alpha1.AzVolumeOperationSpec{
+				DiskURI:            diskURI,
+				DSASToken:          dSASToken,
+				RequestedOperation: v1alpha1.Attach,
+			},
+		}
 
-	vop, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Create(context.Background(), &volumeOperation, metav1.CreateOptions{})
-	if err != nil {
-		klog.Errorf("Error occured while creating volume operation %v", err)
-	}
-
-	conditionFunc := func() (bool, error) {
-		var err error
-		vop, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), volumeOperation.Name, metav1.GetOptions{})
+		klog.V(2).Infof("creating azvolumeoperation for volume %s", diskName)
+		vop, err := d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Create(context.Background(), &volumeOperation, metav1.CreateOptions{})
 		if err != nil {
-			return false, err
+			if errors.IsAlreadyExists(err) {
+				return nil, status.Errorf(codes.Aborted, fmt.Sprintf("An operation for this volume %s is already in progress", diskName))
+			}
+			return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to create azvolumeOperation for volume %s on node %s with error: %v", diskName, nodeID, err))
 		}
-		if vop.Status.State == v1alpha1.VolumeAttached {
-			lun = int32(vop.Status.Lun)
-			return true, nil
+
+		conditionFunc := func() (bool, error) {
+			var err error
+			vop, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperation.Name, metav1.GetOptions{})
+			if err != nil {
+				return false, err
+			}
+			if vop.Status.State == v1alpha1.VolumeAttached {
+				val, err := strconv.Atoi(vop.Status.Lun)
+				if err != nil {
+					return false, err
+				}
+				lun = int32(val)
+				return true, nil
+			}
+			return false, nil
 		}
-		return false, nil
+
+		err = wait.PollImmediate(5*time.Second, 30*time.Second, conditionFunc)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to attach volume %s on node %s with error: %v", diskName, nodeID, err))
+		}
 	}
-
-	err = wait.PollImmediate(5*time.Second, 30*time.Second, conditionFunc)
-
-	if err != nil {
-		klog.Errorf("Error occured while polling on the volume %v", err)
-	}
-
-	klog.Infof("Attach successful. Creating publish context")
-	// if err == nil {
-	// 	if vmState != nil && strings.ToLower(*vmState) == "failed" {
-	// 		klog.Warningf("VM(%s) is in failed state, update VM first", nodeName)
-	// 		if err := d.cloud.UpdateVM(ctx, nodeName); err != nil {
-	// 			return nil, status.Errorf(codes.Internal, "update instance %q failed with %v", nodeName, err)
-	// 		}
-	// 	}
-	// 	// Volume is already attached to node.
-	// 	klog.V(2).Infof("Attach operation is successful. volume %s is already attached to node %s at lun %d.", diskURI, nodeName, lun)
-	// } else {
-	// 	var cachingMode compute.CachingTypes
-	// 	if cachingMode, err = azureutils.GetCachingMode(volumeContext); err != nil {
-	// 		return nil, status.Errorf(codes.Internal, err.Error())
-	// 	}
-	// 	klog.V(2).Infof("Trying to attach volume %s to node %s", diskURI, nodeName)
-
-	// 	asyncAttach := isAsyncAttachEnabled(d.enableAsyncAttach, volumeContext)
-	// 	lun, err = d.cloud.AttachDisk(ctx, asyncAttach, diskName, diskURI, nodeName, cachingMode, disk)
-	// 	if err == nil {
-	// 		klog.V(2).Infof("Attach operation successful: volume %s attached to node %s.", diskURI, nodeName)
-	// 	} else {
-	// 		if derr, ok := err.(*volerr.DanglingAttachError); ok {
-	// 			if strings.EqualFold(string(nodeName), string(derr.CurrentNode)) {
-	// 				err := status.Errorf(codes.Internal, "volume %s is actually attached to current node %s, return error", diskURI, nodeName)
-	// 				klog.Warningf("%v", err)
-	// 				return nil, err
-	// 			}
-	// 			klog.Warningf("volume %s is already attached to node %s, try detach first", diskURI, derr.CurrentNode)
-	// 			if err = d.cloud.DetachDisk(ctx, diskName, diskURI, derr.CurrentNode); err != nil {
-	// 				return nil, status.Errorf(codes.Internal, "Could not detach volume %s from node %s: %v", diskURI, derr.CurrentNode, err)
-	// 			}
-	// 			klog.V(2).Infof("Trying to attach volume %s to node %s again", diskURI, nodeName)
-	// 			lun, err = d.cloud.AttachDisk(ctx, asyncAttach, diskName, diskURI, nodeName, cachingMode, disk)
-
-	// 		}
-	// 		if err != nil {
-	// 			klog.Errorf("Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
-	// 			return nil, status.Errorf(codes.Internal, "Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
-	// 		}
-	// 	}
-	// 	klog.V(2).Infof("attach volume %s to node %s successfully", diskURI, nodeName)
-	// }
 
 	publishContext := map[string]string{consts.LUN: strconv.Itoa(int(lun))}
-	// if disk != nil {
-	// 	if _, ok := volumeContext[consts.RequestedSizeGib]; !ok {
-	// 		klog.V(6).Infof("found static PV(%s), insert disk properties to volumeattachments", diskURI)
-	// 		azureutils.InsertDiskProperties(disk, publishContext)
-	// 	}
-	// }
-	// isOperationSucceeded = true
+	if disk != nil {
+		if _, ok := volumeContext[consts.RequestedSizeGib]; !ok {
+			klog.V(6).Infof("found static PV(%s), insert disk properties to volumeattachments", diskURI)
+			azureutils.InsertDiskProperties(disk, publishContext)
+		}
+	}
+	isOperationSucceeded = true
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
@@ -477,7 +460,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 	nodeName := types.NodeName(nodeID)
 
-	_, err := azureutils.GetDiskName(diskURI)
+	diskName, err := azureutils.GetDiskName(diskURI)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
@@ -488,28 +471,30 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI, consts.Node, string(nodeName))
 	}()
 
-	klog.V(2).Infof("Trying to detach volume %s from node %s", diskURI, nodeID)
+	klog.V(2).Infof("Initiating detach for volume %s from node %s", diskURI, nodeID)
 
-	client, err := azureutils.GetKubeConfig(d.kubeconfig)
-	clientSet, err := azdisk.NewForConfig(client)
-
-	vop, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "azvolumeoperation1", metav1.GetOptions{})
+	volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
+	vop, err := d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperationName, metav1.GetOptions{})
 	if err != nil {
-		klog.Infof("Error occured while getting the volumes %v", err)
+		if errors.IsNotFound(err) {
+			klog.Infof("failed to find AzVolumeOperation %s, volume is already detached", volumeOperationName)
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get VolumeOperation %s with error: %v", volumeOperationName, err)
 	}
 
 	copyForupdate := vop.DeepCopy()
 	copyForupdate.Spec.RequestedOperation = v1alpha1.Detach
 
-	_, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Update(context.Background(), copyForupdate, metav1.UpdateOptions{})
+	_, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForupdate, metav1.UpdateOptions{})
 
 	if err != nil {
-		klog.Infof("Error occured while updating the volumes in detach: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to update AzVolumeOperation %s with error: %v", volumeOperationName, err)
 	}
 
 	conditionFunc := func() (bool, error) {
 		var err error
-		vop, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), "azvolumeoperation1", metav1.GetOptions{})
+		vop, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperationName, metav1.GetOptions{})
 		if vop.Status.State == v1alpha1.VolumeDetached {
 			return true, nil
 		}
@@ -521,31 +506,22 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 	err = wait.PollImmediate(5*time.Second, 30*time.Second, conditionFunc)
 	if err != nil {
-		klog.Errorf("Error occured while detaching the volume %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to detach volume %s from node %s with error: %v", diskName, nodeID, err)
 	}
 
 	copyForupdate = vop.DeepCopy()
 	copyForupdate.ObjectMeta.Finalizers = []string{}
 
-	_, err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Update(context.Background(), copyForupdate, metav1.UpdateOptions{})
-
-	if err != nil {
-		klog.Infof("Error occured while removing the finalizers: %v", err)
+	if _, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForupdate, metav1.UpdateOptions{}); err != nil {
+		klog.Infof("failed to remove finalizers from volumeOperation %s with error: %v", volumeOperationName, err)
 	}
 
-	if err = clientSet.DiskV1alpha1().AzVolumeOperations("default").Delete(context.Background(), "azvolumeoperation1", metav1.DeleteOptions{}); err != nil {
-		klog.Errorf("Error occured while deleting the AzVolumeOperation: %v", err)
+	if err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Delete(context.Background(), volumeOperationName, metav1.DeleteOptions{}); err != nil {
+		klog.Infof("failed to delete volumeOperation %s with error: %v", volumeOperationName, err)
 	}
 
-	// if err := d.cloud.DetachDisk(ctx, diskName, diskURI, nodeName); err != nil {
-	// 	if strings.Contains(err.Error(), consts.ErrDiskNotFound) {
-	// 		klog.Warningf("volume %s already detached from node %s", diskURI, nodeID)
-	// 	} else {
-	// 		return nil, status.Errorf(codes.Internal, "Could not detach volume %s from node %s: %v", diskURI, nodeID, err)
-	// 	}
-	// }
-	// klog.V(2).Infof("detach volume %s from node %s successfully", diskURI, nodeID)
-	// isOperationSucceeded = true
+	klog.V(2).Infof("detach volume %s from node %s successfully", diskURI, nodeID)
+	isOperationSucceeded = true
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }

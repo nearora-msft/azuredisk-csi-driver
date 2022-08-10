@@ -19,8 +19,6 @@ package azuredisk
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"reflect"
 	"strings"
 	"time"
@@ -32,17 +30,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/mount-utils"
 
-	"sigs.k8s.io/azuredisk-csi-driver/pkg/apis/azuredisk/v1alpha1"
 	azdisk "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned"
-	azdiskinformers "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/informers/externalversions"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 	csicommon "sigs.k8s.io/azuredisk-csi-driver/pkg/csi-common"
@@ -125,6 +118,7 @@ type Driver struct {
 	volumeLocks *volumehelper.VolumeLocks
 	// a timed cache GetDisk throttling
 	getDiskThrottlingCache *azcache.TimedCache
+	crdClienSet            *azdisk.Clientset
 }
 
 // newDriverV1 Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
@@ -185,10 +179,25 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 	d.cloud = cloud
 	d.kubeconfig = kubeconfig
 
+	// Initialise CRD clientset
+	client, err := azureutils.GetKubeConfig(kubeconfig)
+	if err != nil {
+		klog.Fatalf("Failed to get kubeconfig with error: %v", err)
+	}
+	clientSet, err := azdisk.NewForConfig(client)
+	if err != nil {
+		klog.Fatalf("Failed to get clientset with error: %v", err)
+	}
+	d.crdClienSet = clientSet
+
 	if d.vmType != "" {
 		klog.V(2).Infof("override VMType(%s) in cloud config as %s", d.cloud.VMType, d.vmType)
 		d.cloud.VMType = d.vmType
 	}
+
+	ctxRoot := context.Background()
+	ctx, cancel := context.WithCancel(ctxRoot)
+	defer cancel()
 
 	if d.NodeID == "" {
 		// Disable UseInstanceMetadata for controller to mitigate a timeout issue using IMDS
@@ -207,78 +216,8 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 		}
 		klog.V(2).Infof("cloud: %s, location: %s, rg: %s, VMType: %s, PrimaryScaleSetName: %s, PrimaryAvailabilitySetName: %s, DisableAvailabilitySetNodes: %v", d.cloud.Cloud, d.cloud.Location, d.cloud.ResourceGroup, d.cloud.VMType, d.cloud.PrimaryScaleSetName, d.cloud.PrimaryAvailabilitySetName, d.cloud.DisableAvailabilitySetNodes)
 	} else {
-		// Write code to create informers
-		klog.Infof("Creating informers")
-		client, err := azureutils.GetKubeConfig(kubeconfig)
-		clientSet, err := azdisk.NewForConfig(client)
-		if err != nil {
-			klog.Errorf("Error building snapshot clientset: %s", err.Error())
-			os.Exit(1)
-		}
-		azurediskInformerFactory := azdiskinformers.NewSharedInformerFactoryWithOptions(clientSet, time.Second*5, azdiskinformers.WithTweakListOptions(func(lo *v1.ListOptions) {
-			lo.LabelSelector = labels.Set{consts.VolumeOperationManagedBy: d.NodeID}.AsSelector().String()
-		}))
-
-		azVolumeOperationInformer := azurediskInformerFactory.Disk().V1alpha1().AzVolumeOperations()
-
-		klog.Infof("Adding event handlers")
-
-		azVolumeOperationInformer.Informer().AddEventHandler(
-			cache.ResourceEventHandlerFuncs{
-				AddFunc: func(obj interface{}) {
-
-					klog.Infof("Initiating attach")
-					azVolumeOperation := obj.(*v1alpha1.AzVolumeOperation)
-					azVolumeOperation1, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), azVolumeOperation.Name, metav1.GetOptions{})
-					if err != nil {
-						klog.Errorf("Error occurred while getting azvolumeoperation %v", err)
-					}
-					copyForUpdate := azVolumeOperation1.DeepCopy()
-					copyForUpdate.Status = v1alpha1.AzVolumeOperationStatus{
-						Lun:   0,
-						State: v1alpha1.VolumeAttached,
-					}
-
-					klog.Infof("Starting the update operation with namespace: %s", copyForUpdate.Namespace)
-
-					_, err = clientSet.DiskV1alpha1().AzVolumeOperations(copyForUpdate.Namespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
-					if err != nil {
-						klog.Errorf("Error occured while updating AzVolume Operation: %v", err)
-					}
-					klog.Infof("Attach was successful")
-				},
-				UpdateFunc: func(oldObj interface{}, newObj interface{}) {
-					klog.Infof("CRI was updated to be detached")
-					azVolumeOperationNew := newObj.(*v1alpha1.AzVolumeOperation)
-					if azVolumeOperationNew.Spec.RequestedOperation == v1alpha1.Detach && azVolumeOperationNew.Status.State == v1alpha1.VolumeAttached {
-						azVolumeOperation1, err := clientSet.DiskV1alpha1().AzVolumeOperations("default").Get(context.Background(), azVolumeOperationNew.Name, metav1.GetOptions{})
-						if err != nil {
-							klog.Errorf("Error occured while getting azvolume operation in detach %v", err)
-						}
-						copyForUpdate := azVolumeOperation1.DeepCopy()
-						klog.Infof("Updating the state to detached")
-						copyForUpdate.Status.State = v1alpha1.VolumeDetached
-						_, err = clientSet.DiskV1alpha1().AzVolumeOperations(copyForUpdate.Namespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
-					}
-				},
-			})
-
-		stopCh := make(chan struct{})
-
-		go func() {
-			klog.Infof("Starting informer factory")
-			azurediskInformerFactory.Start(stopCh)
-
-			klog.Infof("Creating notification channel")
-			c := make(chan os.Signal, 1)
-			signal.Notify(c, os.Interrupt)
-			<-c
-			close(stopCh)
-
-			klog.Infof("Created notification channel")
-
-		}()
-
+		azVolumeOperationManager := NewAzVolumeOperationManager(d.crdClienSet, d.NodeID)
+		azVolumeOperationManager.Init(ctx)
 	}
 
 	if d.vmssCacheTTLInSeconds > 0 {
@@ -335,17 +274,6 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
 	s.Start(endpoint, d, d, d, testingMock)
 	s.Wait()
-}
-
-func onVolumeOperationAdd(obj interface{}) {
-	klog.Infof("Initiating attach")
-	azVolumeOperation := obj.(v1alpha1.AzVolumeOperation)
-	copyForUpdate := azVolumeOperation.DeepCopy()
-	copyForUpdate.Status.Lun = 0
-}
-
-func onVolumeOperationDelete(obj interface{}) {
-	klog.Infof("initiating detach")
 }
 
 func (d *Driver) isGetDiskThrottled() bool {
