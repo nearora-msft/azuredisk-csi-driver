@@ -19,21 +19,20 @@ import (
 
 type AzVolumeOperationManager struct {
 	clientSet *azdisk.Clientset
-	nodeId    string
+	nodeID    string
 }
 
 func NewAzVolumeOperationManager(clientSet *azdisk.Clientset, nodeId string) *AzVolumeOperationManager {
 	return &AzVolumeOperationManager{
 		clientSet: clientSet,
-		nodeId:    nodeId,
+		nodeID:    nodeId,
 	}
 }
 
 func (mgr *AzVolumeOperationManager) Init(ctx context.Context) {
-
 	klog.V(2).Info("Initiating AzVolumeOPeration infomers")
 	azurediskInformerFactory := azdiskinformers.NewSharedInformerFactoryWithOptions(mgr.clientSet, time.Duration(30)*time.Second, azdiskinformers.WithTweakListOptions(func(lo *v1.ListOptions) {
-		lo.LabelSelector = labels.Set{consts.VolumeOperationManagedBy: mgr.nodeId}.AsSelector().String()
+		lo.LabelSelector = labels.Set{consts.VolumeOperationManagedBy: mgr.nodeID}.AsSelector().String()
 	}))
 
 	azVolumeOperationInformer := azurediskInformerFactory.Disk().V1alpha1().AzVolumeOperations()
@@ -53,11 +52,9 @@ func (mgr *AzVolumeOperationManager) Init(ctx context.Context) {
 		klog.Fatal("failed to sync and populate the cache for AzVolumeoperation informer")
 		os.Exit(1)
 	}
-
 }
 
 func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
-
 	azVolumeOperation := obj.(*v1alpha1.AzVolumeOperation)
 
 	klog.V(2).Infof("Initiating attach for volume %s", azVolumeOperation.Spec.DiskURI)

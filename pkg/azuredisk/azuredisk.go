@@ -182,11 +182,11 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 	// Initialise CRD clientset
 	client, err := azureutils.GetKubeConfig(kubeconfig)
 	if err != nil {
-		klog.Fatalf("Failed to get kubeconfig with error: %v", err)
+		klog.Fatalf("failed to get kubeconfig with error: %v", err)
 	}
 	clientSet, err := azdisk.NewForConfig(client)
 	if err != nil {
-		klog.Fatalf("Failed to get clientset with error: %v", err)
+		klog.Fatalf("failed to get clientset with error: %v", err)
 	}
 	d.crdClienSet = clientSet
 

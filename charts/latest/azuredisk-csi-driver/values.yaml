@@ -1,9 +1,9 @@
 image:
   baseRepo: mcr.microsoft.com
   azuredisk:
-    repository: nearora4/azuredisk-csi
-    tag: v1.22.0
-    pullPolicy: Always
+    repository: /k8s/csi/azuredisk-csi
+    tag: latest
+    pullPolicy: IfNotPresent
   csiProvisioner:
     repository: /oss/kubernetes-csi/csi-provisioner
     tag: v3.2.0

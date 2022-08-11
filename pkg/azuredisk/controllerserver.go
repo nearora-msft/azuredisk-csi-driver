@@ -471,7 +471,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI, consts.Node, string(nodeName))
 	}()
 
-	klog.V(2).Infof("Initiating detach for volume %s from node %s", diskURI, nodeID)
+	klog.V(2).Infof("Trying to detach volume %s from node %s", diskURI, nodeID)
 
 	volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
 	vop, err := d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperationName, metav1.GetOptions{})

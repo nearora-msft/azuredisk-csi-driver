@@ -27,15 +27,9 @@ import (
 
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azuredisk"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
-	vopclientset "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/azuredisk/v1alpha1"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	// +kubebuilder:scaffold:imports
 )
 
 func init() {
@@ -47,7 +41,7 @@ var (
 	nodeID                     = flag.String("nodeid", "", "node id")
 	version                    = flag.Bool("version", false, "Print the version and exit.")
 	metricsAddress             = flag.String("metrics-address", "0.0.0.0:29604", "export the metrics")
-	kubeconfig                 = flag.String("kubeconfigs", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+	kubeconfig                 = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
 	driverName                 = flag.String("drivername", consts.DefaultDriverName, "name of the driver")
 	volumeAttachLimit          = flag.Int64("volume-attach-limit", -1, "maximum number of attachable volumes per node")
 	supportZone                = flag.Bool("support-zone", true, "boolean flag to get zone info in NodeGetInfo")
@@ -68,17 +62,6 @@ var (
 	enableDiskCapacityCheck    = flag.Bool("enable-disk-capacity-check", false, "boolean flag to enable volume capacity check in CreateVolume")
 	vmssCacheTTLInSeconds      = flag.Int64("vmss-cache-ttl-seconds", -1, "vmss cache TTL in seconds (600 by default)")
 )
-
-var (
-	scheme   = runtime.NewScheme()
-	setupLog = logf.Log.WithName("setup")
-)
-
-func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(vopclientset.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
-}
 
 func main() {
 	flag.Parse()
