@@ -22,10 +22,10 @@ type AzVolumeOperationManager struct {
 	nodeID    string
 }
 
-func NewAzVolumeOperationManager(clientSet *azdisk.Clientset, nodeId string) *AzVolumeOperationManager {
+func NewAzVolumeOperationManager(clientSet *azdisk.Clientset, nodeID string) *AzVolumeOperationManager {
 	return &AzVolumeOperationManager{
 		clientSet: clientSet,
-		nodeID:    nodeId,
+		nodeID:    nodeID,
 	}
 }
 
