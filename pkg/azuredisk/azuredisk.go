@@ -118,7 +118,7 @@ type Driver struct {
 	volumeLocks *volumehelper.VolumeLocks
 	// a timed cache GetDisk throttling
 	getDiskThrottlingCache *azcache.TimedCache
-	crdClienSet            *azdisk.Clientset
+	crdClienSet            azdisk.Interface
 }
 
 // newDriverV1 Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
@@ -180,15 +180,17 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 	d.kubeconfig = kubeconfig
 
 	// Initialise CRD clientset
-	client, err := azureutils.GetKubeConfig(kubeconfig)
-	if err != nil {
-		klog.Fatalf("failed to get kubeconfig with error: %v", err)
+	if d.crdClienSet == nil {
+		client, err := azureutils.GetKubeConfig(kubeconfig)
+		if err != nil {
+			klog.Fatalf("failed to get kubeconfig with error: %v", err)
+		}
+		clientSet, err := azdisk.NewForConfig(client)
+		if err != nil {
+			klog.Fatalf("failed to get clientset with error: %v", err)
+		}
+		d.crdClienSet = clientSet
 	}
-	clientSet, err := azdisk.NewForConfig(client)
-	if err != nil {
-		klog.Fatalf("failed to get clientset with error: %v", err)
-	}
-	d.crdClienSet = clientSet
 
 	if d.vmType != "" {
 		klog.V(2).Infof("override VMType(%s) in cloud config as %s", d.cloud.VMType, d.vmType)

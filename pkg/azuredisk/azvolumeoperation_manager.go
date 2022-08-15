@@ -18,11 +18,11 @@ import (
 )
 
 type AzVolumeOperationManager struct {
-	clientSet *azdisk.Clientset
+	clientSet azdisk.Interface
 	nodeID    string
 }
 
-func NewAzVolumeOperationManager(clientSet *azdisk.Clientset, nodeID string) *AzVolumeOperationManager {
+func NewAzVolumeOperationManager(clientSet azdisk.Interface, nodeID string) *AzVolumeOperationManager {
 	return &AzVolumeOperationManager{
 		clientSet: clientSet,
 		nodeID:    nodeID,
