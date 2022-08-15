@@ -30,9 +30,20 @@ import (
 	"google.golang.org/grpc/status"
 	clientset "k8s.io/client-go/kubernetes"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
+	"sigs.k8s.io/azuredisk-csi-driver/test/utils/testutil"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/diskclient/mockdiskclient"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
+
+func TestNewDriverV1(t *testing.T) {
+	d := newDriverV1(&DriverOptions{
+		NodeID:                 os.Getenv("nodeid"),
+		DriverName:             consts.DefaultDriverName,
+		VolumeAttachLimit:      16,
+		EnablePerfOptimization: false,
+	})
+	assert.NotNil(t, d)
+}
 
 func TestCheckDiskCapacity(t *testing.T) {
 	d, _ := NewFakeDriver(t)
@@ -65,6 +76,46 @@ func TestRun(t *testing.T) {
     "resourceGroup": "rg1",
     "location": "loc"
 }`
+	fakeKubeConfig, err := testutil.GetWorkDirPath("fake-kube-config")
+	if err != nil {
+		t.Errorf("GetWorkDirPath failed with %v", err)
+	}
+
+	fakeContent := `
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://localhost:8080
+  name: foo-cluster
+contexts:
+- context:
+   cluster: foo-cluster
+   user: foo-user
+   namespace: bar
+  name: foo-context
+current-context: foo-context
+kind: Config
+users:
+- name: foo-user
+  user:
+   exec:
+    apiVersion: client.authentication.k8s.io/v1beta1
+    args:
+    - arg-1
+    - arg-2
+    command: foo-command
+`
+
+	if err := createTestFile(fakeKubeConfig); err != nil {
+		t.Error(err)
+	}
+	defer func() {
+		os.Remove(fakeKubeConfig)
+	}()
+
+	if err := ioutil.WriteFile(fakeKubeConfig, []byte(fakeContent), 0666); err != nil {
+		t.Error(err)
+	}
 
 	testCases := []struct {
 		name     string
@@ -92,7 +143,7 @@ func TestRun(t *testing.T) {
 				os.Setenv(consts.DefaultAzureCredentialFileEnv, fakeCredFile)
 
 				d, _ := NewFakeDriver(t)
-				d.Run("tcp://127.0.0.1:0", "", true, true)
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
 			},
 		},
 		{
@@ -119,7 +170,40 @@ func TestRun(t *testing.T) {
 				d, _ := NewFakeDriver(t)
 				d.setCloud(&azure.Cloud{})
 				d.setNodeID("")
-				d.Run("tcp://127.0.0.1:0", "", true, true)
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
+			},
+		},
+		{
+			name: "Successful run with vmss VMType",
+			testFunc: func(t *testing.T) {
+				if err := ioutil.WriteFile(fakeCredFile, []byte(fakeCredContent), 0666); err != nil {
+					t.Error(err)
+				}
+
+				defer func() {
+					if err := os.Remove(fakeCredFile); err != nil {
+						t.Error(err)
+					}
+				}()
+
+				originalCredFile, ok := os.LookupEnv(consts.DefaultAzureCredentialFileEnv)
+				if ok {
+					defer os.Setenv(consts.DefaultAzureCredentialFileEnv, originalCredFile)
+				} else {
+					defer os.Unsetenv(consts.DefaultAzureCredentialFileEnv)
+				}
+				os.Setenv(consts.DefaultAzureCredentialFileEnv, fakeCredFile)
+
+				d := newDriverV1(&DriverOptions{
+					NodeID:                 "",
+					DriverName:             consts.DefaultDriverName,
+					EnableListVolumes:      true,
+					EnableListSnapshots:    true,
+					EnablePerfOptimization: true,
+					VMSSCacheTTLInSeconds:  10,
+					VMType:                 "vmss",
+				})
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
 			},
 		},
 	}
@@ -154,4 +238,76 @@ func TestGetNodeInfoFromLabels(t *testing.T) {
 			t.Errorf("Unexpected result: %v, expected result: %v", err, test.expectedError)
 		}
 	}
+}
+
+func TestGetDefaultDiskIOPSReadWrite(t *testing.T) {
+	tests := []struct {
+		requestGiB int
+		expected   int
+	}{
+		{
+			requestGiB: 1,
+			expected:   500,
+		},
+		{
+			requestGiB: 512,
+			expected:   512,
+		},
+		{
+			requestGiB: 51200000,
+			expected:   160000,
+		},
+	}
+
+	for _, test := range tests {
+		result := getDefaultDiskIOPSReadWrite(test.requestGiB)
+		if result != test.expected {
+			t.Errorf("Unexpected result: %v, expected result: %v, input: %d", result, test.expected, test.requestGiB)
+		}
+	}
+}
+
+func TestGetDefaultDiskMBPSReadWrite(t *testing.T) {
+	tests := []struct {
+		requestGiB int
+		expected   int
+	}{
+		{
+			requestGiB: 1,
+			expected:   100,
+		},
+		{
+			requestGiB: 512,
+			expected:   100,
+		},
+		{
+			requestGiB: 51200,
+			expected:   200,
+		},
+		{
+			requestGiB: 51200000,
+			expected:   625,
+		},
+		{
+			requestGiB: 512000000,
+			expected:   625,
+		},
+	}
+
+	for _, test := range tests {
+		result := getDefaultDiskMBPSReadWrite(test.requestGiB)
+		if result != test.expected {
+			t.Errorf("Unexpected result: %v, expected result: %v, input: %d", result, test.expected, test.requestGiB)
+		}
+	}
+}
+
+func createTestFile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return nil
 }

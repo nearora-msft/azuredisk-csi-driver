@@ -279,7 +279,8 @@ func TestGetCloudProvider(t *testing.T) {
 		t.Errorf("GetWorkDirPath failed with %v", err)
 	}
 
-	fakeContent := `apiVersion: v1
+	fakeContent := `
+apiVersion: v1
 clusters:
 - cluster:
     server: https://localhost:8080
