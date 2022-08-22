@@ -392,6 +392,11 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		klog.V(2).Infof("Attach operation is successful. volume %s is already attached to node %s at lun %d.", diskURI, nodeName, lun)
 	} else {
 
+		// var cachingMode compute.CachingTypes
+		// if cachingMode, err = azureutils.GetCachingMode(volumeContext); err != nil {
+		// 	return nil, status.Errorf(codes.Internal, err.Error())
+		// }
+
 		// Todo: Get the DSAS token from the DiskRP
 		dSASToken := "placeholder_dsas"
 
@@ -429,7 +434,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 				return false, err
 			}
 			if vop.Status.State == v1alpha1.VolumeAttached {
-				val, err := strconv.Atoi(vop.Status.Lun)
+				val, err := strconv.ParseInt(vop.Status.Lun, 10, 32)
 				if err != nil {
 					return false, err
 				}
