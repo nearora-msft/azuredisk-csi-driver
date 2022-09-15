@@ -18,6 +18,8 @@ package diskclient
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -405,6 +407,54 @@ func (c *Client) listNextResults(ctx context.Context, lastResults compute.DiskLi
 		err = autorest.NewErrorWithError(err, "diskclient", "listNextResults", resp, "Failure responding to next results request")
 	}
 	return
+}
+
+func (c *Client) GetDSASToken(ctx context.Context, subsID, resourceGroupName, diskName string) (dSASToken string, dSASHash string, err error) {
+
+	resourceID := armclient.GetResourceID(
+		subsID,
+		resourceGroupName,
+		diskResourceType,
+		diskName,
+	)
+
+	params := map[string]string{"access": "WriteDsas", "durationInSeconds": "300"}
+
+	resp, rerr := c.armClient.PostResource(ctx, resourceID, "beginGetAccess", params, map[string]interface{}{})
+	if rerr != nil {
+		return "", "", rerr.RawError
+	}
+
+	defer c.armClient.CloseResponse(ctx, resp)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+
+	var accessSas, dsasHash string
+	var m map[string]*json.RawMessage
+	err = json.Unmarshal(body, &m)
+	for k, v := range m {
+		switch k {
+		case "accessSAS":
+			if v != nil {
+				err = json.Unmarshal(*v, accessSas)
+				if err != nil {
+					return "", "", err
+				}
+			}
+		case "dsasHash":
+			if v != nil {
+				err = json.Unmarshal(*v, &dsasHash)
+				if err != nil {
+					return "", "", err
+				}
+			}
+		}
+	}
+
+	return accessSas, dsasHash, nil
 }
 
 // listResponder handles the response to the List request. The method always

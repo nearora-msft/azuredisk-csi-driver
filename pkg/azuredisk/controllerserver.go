@@ -398,7 +398,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		// }
 
 		// Todo: Get the DSAS token from the DiskRP
-		dSASToken := "placeholder_dsas"
+		subsId := azureutils.GetSubscriptionIDFromURI(diskURI)
+		resourceGroup, _ := azureutils.GetResourceGroupFromURI(diskURI)
+		diskName, _ := azureutils.GetDiskName(diskURI)
+		dSASToken, _, _ := d.cloud.DisksClient.GetDSASToken(ctx, subsId, resourceGroup, diskName)
 
 		// Attach the disk to the node
 		volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)

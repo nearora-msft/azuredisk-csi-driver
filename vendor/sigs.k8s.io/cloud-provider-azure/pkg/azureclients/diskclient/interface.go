@@ -50,4 +50,7 @@ type Interface interface {
 
 	// ListByResourceGroup lists all the disks under a resource group.
 	ListByResourceGroup(ctx context.Context, subsID, resourceGroupName string) ([]compute.Disk, *retry.Error)
+
+	// Get DSAS for Disk Attach
+	GetDSASToken(ctx context.Context, subsID, resourceGroupName, diskName string) (dSASToken string, dSASHash string, err error)
 }
