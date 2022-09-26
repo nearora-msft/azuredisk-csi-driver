@@ -422,6 +422,7 @@ func (c *Client) GetDSASToken(ctx context.Context, subsID, resourceGroupName, di
 
 	resp, rerr := c.armClient.PostResource(ctx, resourceID, "beginGetAccess", params, map[string]interface{}{})
 	if rerr != nil {
+		klog.Errorf("Error occured in calling BeginGetAccess: %v", rerr.RawError)
 		return "", "", rerr.RawError
 	}
 
@@ -439,8 +440,9 @@ func (c *Client) GetDSASToken(ctx context.Context, subsID, resourceGroupName, di
 		switch k {
 		case "accessSAS":
 			if v != nil {
-				err = json.Unmarshal(*v, accessSas)
+				err = json.Unmarshal(*v, &accessSas)
 				if err != nil {
+					klog.Errorf("Error occured while unmarshalling accessSas: %v", err)
 					return "", "", err
 				}
 			}
@@ -448,12 +450,14 @@ func (c *Client) GetDSASToken(ctx context.Context, subsID, resourceGroupName, di
 			if v != nil {
 				err = json.Unmarshal(*v, &dsasHash)
 				if err != nil {
+					klog.Errorf("Error occured while unmarshalling accessSasHash: %v", err)
 					return "", "", err
 				}
 			}
 		}
 	}
 
+	klog.Infof("the accessSAS and accessSasHash are: %s and %s", accessSas, dsasHash)
 	return accessSas, dsasHash, nil
 }
 
