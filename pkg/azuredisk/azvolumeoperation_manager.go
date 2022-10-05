@@ -15,17 +15,22 @@ import (
 	azdiskinformers "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/informers/externalversions"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
+	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 )
+
+const maxLUN = 64
 
 type AzVolumeOperationManager struct {
 	clientSet azdisk.Interface
 	nodeID    string
+	ioHandler azureutils.IOHandler
 }
 
-func NewAzVolumeOperationManager(clientSet azdisk.Interface, nodeID string) *AzVolumeOperationManager {
+func NewAzVolumeOperationManager(clientSet azdisk.Interface, nodeID string, ioHandler azureutils.IOHandler) *AzVolumeOperationManager {
 	return &AzVolumeOperationManager{
 		clientSet: clientSet,
 		nodeID:    nodeID,
+		ioHandler: ioHandler,
 	}
 }
 
@@ -59,6 +64,22 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 
 	klog.V(2).Infof("Initiating attach for volume %s", azVolumeOperation.Spec.DiskURI)
 
+	// Get the available luns on this node
+	usedLunsMap, err := findUsedLuns(mgr.ioHandler)
+	var diskLun int
+	var found bool
+	for i := 0; i < maxLUN; i++ {
+		if !usedLunsMap[i] {
+			found = true
+			diskLun = i
+			break
+		}
+	}
+
+	klog.Info("Lun found status: %t and value: %s", found, diskLun)
+
+	//Todo: Update AzVolumeOperation asynchronously with the Lun value
+
 	//Todo: Make a call to host to attach
 
 	copyForUpdate := azVolumeOperation.DeepCopy()
@@ -68,7 +89,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 		State: v1alpha1.VolumeAttached,
 	}
 
-	_, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
+	_, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("failed to update AzvolumeOperation after attach with error: %v", err)
 	}
