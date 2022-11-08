@@ -101,30 +101,6 @@ func findDiskByLun(lun int, io azureutils.IOHandler, m *mount.SafeFormatAndMount
 	return findDiskByLunWithConstraint(lun, io, azureDisks)
 }
 
-func findUsedLuns(io azureutils.IOHandler) (map[int]bool, error) {
-	sysPath := "/sys/bus/scsi/devices"
-	usedLunsMap := make(map[int]bool)
-	if dirs, err := io.ReadDir(sysPath); err == nil {
-		for _, f := range dirs {
-			name := f.Name()
-			// look for path like /sys/bus/scsi/devices/3:0:0:1
-			arr := strings.Split(name, ":")
-			if len(arr) < 4 {
-				continue
-			}
-			if arr[0] == "3" {
-				lun, err := strconv.Atoi(arr[3])
-				if err != nil {
-					return usedLunsMap, err
-				}
-				usedLunsMap[lun] = true
-			}
-
-		}
-	}
-	return usedLunsMap, nil
-}
-
 func formatAndMount(source, target, fstype string, options []string, m *mount.SafeFormatAndMount) error {
 	return m.FormatAndMount(source, target, fstype, options)
 }
