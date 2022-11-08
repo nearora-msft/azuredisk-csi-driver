@@ -322,6 +322,7 @@ func (d *Driver) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRe
 
 // ControllerPublishVolume attach an azure disk to a required node
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
+	start := time.Now()
 	diskURI := req.GetVolumeId()
 	if len(diskURI) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID not provided")
@@ -461,6 +462,8 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		}
 	}
 	isOperationSucceeded = true
+
+	klog.Infof("Time passed since start for attach volume: %s", time.Since(start))
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
