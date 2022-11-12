@@ -218,7 +218,7 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 		}
 		klog.V(2).Infof("cloud: %s, location: %s, rg: %s, VMType: %s, PrimaryScaleSetName: %s, PrimaryAvailabilitySetName: %s, DisableAvailabilitySetNodes: %v", d.cloud.Cloud, d.cloud.Location, d.cloud.ResourceGroup, d.cloud.VMType, d.cloud.PrimaryScaleSetName, d.cloud.PrimaryAvailabilitySetName, d.cloud.DisableAvailabilitySetNodes)
 	} else {
-		azVolumeOperationManager := NewAzVolumeOperationManager(d.crdClienSet, d.NodeID)
+		azVolumeOperationManager := NewAzVolumeOperationManager(d.crdClienSet, d.NodeID, d.cloud.DisksClient)
 		azVolumeOperationManager.Init(ctx)
 	}
 

@@ -322,7 +322,6 @@ func (d *Driver) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRe
 
 // ControllerPublishVolume attach an azure disk to a required node
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	start := time.Now()
 	diskURI := req.GetVolumeId()
 	if len(diskURI) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID not provided")
@@ -398,12 +397,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		// 	return nil, status.Errorf(codes.Internal, err.Error())
 		// }
 
-		// Todo: Get the DSAS token from the DiskRP
-		subsId := azureutils.GetSubscriptionIDFromURI(diskURI)
-		resourceGroup, _ := azureutils.GetResourceGroupFromURI(diskURI)
-		diskName, _ := azureutils.GetDiskName(diskURI)
-		dSASToken, _, _ := d.cloud.DisksClient.GetDSASToken(ctx, subsId, resourceGroup, diskName)
-
 		// Attach the disk to the node
 		volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
 
@@ -417,7 +410,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 			},
 			Spec: v1alpha1.AzVolumeOperationSpec{
 				DiskURI:            diskURI,
-				DSASToken:          dSASToken,
 				RequestedOperation: v1alpha1.Attach,
 			},
 		}
@@ -448,7 +440,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 			return false, nil
 		}
 
-		err = wait.PollImmediate(5*time.Second, 30*time.Second, conditionFunc)
+		err = wait.PollImmediate(500*time.Millisecond, 10*time.Second, conditionFunc)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to attach volume %s on node %s with error: %v", diskName, nodeID, err))
 		}
@@ -463,7 +455,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 	isOperationSucceeded = true
 
-	klog.Infof("Time passed since start for attach volume: %s", time.Since(start))
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
@@ -524,7 +515,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return false, nil
 	}
 
-	err = wait.PollImmediate(5*time.Second, 30*time.Second, conditionFunc)
+	err = wait.PollImmediate(500*time.Millisecond, 10*time.Second, conditionFunc)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to detach volume %s from node %s with error: %v", diskName, nodeID, err)
 	}

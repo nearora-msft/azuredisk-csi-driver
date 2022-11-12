@@ -12,11 +12,8 @@ rules:
     resources: ["nodes"]
     verbs: ["get"]
   - apiGroups: ["disk.csi.azure.com"]
-    resources: ["azvolumeoperations/status"]
-    verbs: ["get", "list", "watch", "patch", "update"]
-  - apiGroups: ["disk.csi.azure.com"]
     resources: ["azvolumeoperations"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch", "update"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1

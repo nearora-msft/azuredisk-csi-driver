@@ -15,17 +15,21 @@ import (
 	azdiskinformers "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/informers/externalversions"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
+	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
+	diskClient "sigs.k8s.io/cloud-provider-azure/pkg/azureclients/diskclient"
 )
 
 type AzVolumeOperationManager struct {
-	clientSet azdisk.Interface
-	nodeID    string
+	clientSet  azdisk.Interface
+	nodeID     string
+	diskClient diskClient.Interface
 }
 
-func NewAzVolumeOperationManager(clientSet azdisk.Interface, nodeID string) *AzVolumeOperationManager {
+func NewAzVolumeOperationManager(clientSet azdisk.Interface, nodeID string, diskClient diskClient.Interface) *AzVolumeOperationManager {
 	return &AzVolumeOperationManager{
-		clientSet: clientSet,
-		nodeID:    nodeID,
+		clientSet:  clientSet,
+		nodeID:     nodeID,
+		diskClient: diskClient,
 	}
 }
 
@@ -56,8 +60,17 @@ func (mgr *AzVolumeOperationManager) Init(ctx context.Context) {
 
 func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	azVolumeOperation := obj.(*v1alpha1.AzVolumeOperation)
-
+	diskURI := azVolumeOperation.Spec.DiskURI
 	klog.V(2).Infof("Initiating attach for volume %s", azVolumeOperation.Spec.DiskURI)
+
+	// Make a call for it to call DiskRP
+	ctx := context.Background()
+	subsID := azureutils.GetSubscriptionIDFromURI(diskURI)
+	resourceGroup, _ := azureutils.GetResourceGroupFromURI(diskURI)
+	diskName, _ := azureutils.GetDiskName(diskURI)
+	diskRPStartTime := time.Now()
+	dSASToken, _, _ := mgr.diskClient.GetDSASToken(ctx, subsID, resourceGroup, diskName)
+	klog.Infof("Time passed since start for diskRP call : %s and the token is: %s", time.Since(diskRPStartTime), dSASToken)
 
 	//Todo: Make a call to host to attach
 
@@ -67,11 +80,15 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 		Lun:   "0",
 		State: v1alpha1.VolumeAttached,
 	}
+	copyForUpdate.Spec = v1alpha1.AzVolumeOperationSpec{
+		DSASToken: dSASToken,
+	}
 
-	_, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
+	_, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("failed to update AzvolumeOperation after attach with error: %v", err)
 	}
+
 }
 
 func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{}, newObj interface{}) {
