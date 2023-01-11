@@ -73,6 +73,8 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	klog.Infof("Time passed since start for diskRP call : %s and the token is: %s", time.Since(diskRPStartTime), dSASToken)
 
 	//Todo: Make a call to host to attach
+	klog.Infof("Initiate attach to host")
+	attach_to_host()
 
 	copyForUpdate := azVolumeOperation.DeepCopy()
 	copyForUpdate.Status = v1alpha1.AzVolumeOperationStatus{
