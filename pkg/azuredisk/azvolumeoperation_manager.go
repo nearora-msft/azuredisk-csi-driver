@@ -3,6 +3,7 @@ package azuredisk
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -68,13 +69,20 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	subsID := azureutils.GetSubscriptionIDFromURI(diskURI)
 	resourceGroup, _ := azureutils.GetResourceGroupFromURI(diskURI)
 	diskName, _ := azureutils.GetDiskName(diskURI)
-	diskRPStartTime := time.Now()
-	dSASToken, _, _ := mgr.diskClient.GetDSASToken(ctx, subsID, resourceGroup, diskName)
-	klog.Infof("Time passed since start for diskRP call : %s and the token is: %s", time.Since(diskRPStartTime), dSASToken)
+	// diskRPStartTime := time.Now()
+	blobUrl, dsasHash, err := mgr.diskClient.GetDSASToken(ctx, subsID, resourceGroup, diskName)
+	if err != nil {
+		klog.Errorf("Error occured while : %v", err)
+	}
+	// klog.Infof("Time passed since start for diskRP call : %s and the token is: %s", time.Since(diskRPStartTime), dSASToken)
 
-	//Todo: Make a call to host to attach
+	url := parseBlobURL(blobUrl, dsasHash)
+
 	klog.Infof("Initiate attach to host")
-	attach_to_host()
+	_, err = attachToHost(url, dsasHash)
+	if err != nil {
+		klog.Errorf("Error occured while attaching disk %s to host: %v", diskName, err)
+	}
 
 	copyForUpdate := azVolumeOperation.DeepCopy()
 	copyForUpdate.Status = v1alpha1.AzVolumeOperationStatus{
@@ -83,10 +91,11 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 		State: v1alpha1.VolumeAttached,
 	}
 	copyForUpdate.Spec = v1alpha1.AzVolumeOperationSpec{
-		DSASToken: dSASToken,
+		BlobURL:   blobUrl,
+		DSASToken: dsasHash,
 	}
 
-	_, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{})
+	_, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("failed to update AzvolumeOperation after attach with error: %v", err)
 	}
@@ -98,6 +107,11 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 	if azVolumeOperationNew.Spec.RequestedOperation == v1alpha1.Detach && azVolumeOperationNew.Status.State == v1alpha1.VolumeAttached {
 		klog.V(2).Infof("Initiating detach for volume %s", azVolumeOperationNew.Spec.DiskURI)
 		//Todo: Make a call to host to detach
+		err := detachFromHost(azVolumeOperationNew.Spec.BlobURL, azVolumeOperationNew.Spec.DSASToken)
+		diskName, _ := azureutils.GetDiskName(azVolumeOperationNew.Spec.DiskURI)
+		if err != nil {
+			klog.Errorf("Error occured while detaching disk %s from host: %v", diskName, err)
+		}
 
 		copyForUpdate := azVolumeOperationNew.DeepCopy()
 		copyForUpdate.Status.State = v1alpha1.VolumeDetached
@@ -106,4 +120,23 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 		}
 	}
 
+}
+
+func parseBlobURL(blobURL string, dsasHash string) string {
+	urlWithoutProtocol := blobURL[len("https://"):]
+	urlparts := strings.Split(urlWithoutProtocol, "/")
+
+	accountAndDomain := urlparts[0]
+	index := strings.Index(accountAndDomain, ".")
+	account := accountAndDomain[:index]
+	domain := accountAndDomain[index+1:]
+
+	container := urlparts[1]
+
+	blobAndTimestamp := urlparts[2]
+	index = strings.Index(blobAndTimestamp, "?")
+	blob := blobAndTimestamp[:index]
+	timestamp := blobAndTimestamp[index:]
+
+	return account + "/" + container + "/" + blob + "/" + timestamp + "," + dsasHash + ",0," + domain
 }

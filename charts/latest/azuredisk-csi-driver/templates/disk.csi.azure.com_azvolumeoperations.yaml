@@ -41,6 +41,8 @@ spec:
             type: object
           spec:
             properties:
+              blobUrl:
+                type: string
               diskUri:
                 type: string
               dsasToken:
@@ -49,7 +51,6 @@ spec:
                 type: string
             required:
             - diskUri
-            - dsasToken
             - requestedOperation
             type: object
           status:

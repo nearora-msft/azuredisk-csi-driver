@@ -30,8 +30,10 @@ const (
 )
 
 type AzVolumeOperationSpec struct {
+	DiskURI string `json:"diskUri"`
 	//+optional
-	DiskURI            string             `json:"diskUri"`
+	BlobURL string `json:"blobUrl"`
+	//+optional
 	DSASToken          string             `json:"dsasToken"`
 	RequestedOperation RequestedOperation `json:"requestedOperation"`
 }
