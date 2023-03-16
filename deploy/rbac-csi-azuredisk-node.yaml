@@ -17,6 +17,9 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get"]
+  - apiGroups: ["disk.csi.azure.com"]
+    resources: ["azvolumeoperations"]
+    verbs: ["get", "list", "watch", "patch", "update"]
 
 ---
 kind: ClusterRoleBinding
