@@ -1,10 +1,7 @@
 #ifndef FDA_INTERFACE_H
 #define FDA_INTERFACE_H
 
-#define MOCK_IOCTL
-
 #include "fda_rq_context.h"
-
 
 /*
  * Interfaces to be consumed by DiskRP (?)
@@ -19,25 +16,15 @@
 fda_vsc_context_t *fda_vsc_init();
 
 int fda_disk_attach(fda_vsc_context_t *ctx,
-    const char *fda_activity_id,
-    uint32_t fda_activity_id_length,
-    const char *fda_vmid,
-    uint32_t fda_vmid_length,
     const char *fda_bloburl,
     uint32_t fda_bloburl_length,
-    const char *fda_dsas_key,
-    uint32_t fda_dsas_key_length
+    uint32_t fda_lun_number
 );
 
 int fda_disk_detach(fda_vsc_context_t *ctx,
-    const char *fda_activity_id,
-    uint32_t fda_activity_id_length,
-    const char *fda_vmid,
-    uint32_t fda_vmid_length,
     const char *fda_bloburl,
     uint32_t fda_bloburl_length,
-    const char *fda_dsas_key,
-    uint32_t fda_dsas_key_length
+    uint32_t fda_lun_number
 );
 
 void fda_vsc_cleanup(fda_vsc_context_t *ctx);

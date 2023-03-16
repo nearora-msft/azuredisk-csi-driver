@@ -1,28 +1,64 @@
 #ifndef FDA_RQ_CTX_H
 #define FDA_RQ_CTX_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include<sys/ioctl.h>
+#include <errno.h>
+#include <time.h>
+
 #include <stdint.h>
 
-#define FDA_RQ_MAGIC 0xCAFEF00D
-#define FDA_RQ_VERSION 10
+#define IOCTL_XS_FASTPATH_DRIVER_USER_REQUEST _IOWR('R', 10, struct xs_fastpath_request_sync)
+
+#define MAX_RESPONSE_SIZE  (32 * 1024)
+#define MAX_REQUEST_SIZE  (8 * 1024)
+
+struct xs_fastpath_request_sync_response {
+        int32_t status;
+        int32_t response_len;
+};
+
+struct xs_fastpath_request_sync {
+        char guid[16];
+        int32_t timeout;
+        int32_t request_len;
+        int32_t response_len;
+        int32_t data_len;
+        int32_t data_valid;
+        int64_t request_buffer;
+        int64_t response_buffer;
+        int64_t data_buffer;
+        struct xs_fastpath_request_sync_response response;
+};
+
+struct qad_request_buffer {
+	int32_t op_id; // op_id = 1 for attach, op_id = 2 for detach operation
+	int32_t lun_num;
+	char blobstr[MAX_REQUEST_SIZE-8];
+};
+
+struct qad_data_buffer {
+	int32_t data_val;
+	int32_t dummy;
+	char data_str[MAX_RESPONSE_SIZE-8];
+};
+struct qad_response_buffer {
+	int32_t response_val;
+	int32_t dummy;
+	char response_str[MAX_RESPONSE_SIZE-8];
+};
 
 typedef struct _fda_vsc_context_t {
     int32_t fvc_fd;
     uint32_t fvc_attach_cnt;
     uint32_t fvc_detach_cnt;
 } fda_vsc_context_t;
-
-typedef enum {
-    FDA_INVALID_REQUEST_STATE = 0,
-    FDA_REQ_INITED,
-    FDA_REQ_INIT_FAILED,
-    FDA_REQ_ISSUED,
-    FDA_REQ_RECD,
-    FDA_REQ_PROCESSING,
-    FDA_REQ_PROCESSED,
-    FDA_REQ_RETURNED,
-    FDA_MAX_REQUEST_STATE,
-} fda_request_state_t;
 
 typedef enum {
     FDA_INVALID_OP = 0,
@@ -38,33 +74,5 @@ typedef enum {
     /* other status? */
     FDA_MAX_STATUS,
 } fda_op_status_t;
-
-/*
- * Note: If the activity id, vmid, bloburl, and dsas key are guaranteed to be of
- * a fixed length, then we could just store them as appropriately-sized struct
- * fields directly.
- *
- * In the absence of such information, we dump said fields into a bag-of-bytes
- * as below.
- */
-typedef struct _fda_request_t {
-    uint32_t fbi_magic;
-    uint32_t fbi_version;
-    uint32_t fbi_length;
-    uint32_t fbi_pad;
-    fda_op_t fbi_rq_state;
-    fda_op_t fbi_op;
-    fda_op_status_t fbi_op_status;
-    uint32_t fbi_pad1;
-    uint32_t fbi_activity_id_offset;
-    uint32_t fbi_activity_id_length;
-    uint32_t fbi_vmid_offset;
-    uint32_t fbi_vmid_length;
-    uint32_t fbi_data_bloburl_offset;
-    uint32_t fbi_data_bloburl_length;
-    uint32_t fbi_data_dsas_key_offset;
-    uint32_t fbi_data_dsas_key_length;
-    uint32_t fbi_data[];
-} fda_request_t;
 
 #endif /* FDA_RQ_CTX */

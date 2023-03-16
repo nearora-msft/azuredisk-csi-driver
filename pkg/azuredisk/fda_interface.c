@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <errno.h>
+#include <time.h>
 
 fda_vsc_context_t *fda_vsc_init()
 {
@@ -27,208 +28,197 @@ fda_vsc_context_t *fda_vsc_init()
     ctx->fvc_attach_cnt = 0;
     ctx->fvc_detach_cnt = 0;
 
-#ifndef MOCK_IOCTL
+    printf("\nOpening VSC Driver\n");
     ctx->fvc_fd = open("/dev/azure_blob", O_RDWR);
     if (ctx->fvc_fd < 0) {
-        perror("VSC init failed");
+        perror("VSC driver opening failed!");
         goto err_out_free;
     }
-#endif
 
 out:
     return ctx;
 
-#ifndef MOCK_IOCTL
 err_out_free:
-#endif
     free(ctx);
     ctx = NULL;
     return ctx;
 }
 
-static int fda_init_request(fda_request_t *req,
-    const char *fda_activity_id,
-    uint32_t fda_activity_id_length,
-    const char *fda_vmid,
-    uint32_t fda_vmid_length,
-    const char *fda_bloburl,
-    uint32_t fda_bloburl_length,
-    const char *fda_dsas_key,
-    uint32_t fda_dsas_key_length)
-{
-    int ret = -1;
-    uint32_t data_offset = 0;
-    char *copy_dest = NULL;
-    void *mc_ret = NULL;
-
-    copy_dest = (char *) req->fbi_data + data_offset;
-    mc_ret = memcpy((void *) copy_dest, fda_activity_id, fda_activity_id_length);
-    if (copy_dest != mc_ret) {
-        perror("memcpy activity id failed");
-        goto err_out;
-    }
-    data_offset += fda_activity_id_length;
-
-    copy_dest = (char *) req->fbi_data + data_offset;
-    mc_ret = memcpy((void *) copy_dest, fda_vmid, fda_vmid_length);
-    if (copy_dest != mc_ret) {
-        perror("memcpy vmid failed");
-        goto err_out;
-    }
-    data_offset += fda_vmid_length;
-
-    copy_dest = (char *) req->fbi_data + data_offset;
-    mc_ret = memcpy((void *) copy_dest, fda_bloburl, fda_bloburl_length);
-    if (copy_dest != mc_ret) {
-        perror("memcpy bloburl failed");
-        goto err_out;
-    }
-    data_offset += fda_bloburl_length;
-
-    copy_dest = (char *) req->fbi_data + data_offset;
-    mc_ret = memcpy((void *) copy_dest, fda_dsas_key, fda_dsas_key_length);
-    if (copy_dest != mc_ret) {
-        perror("memcpy dsas key failed");
-        goto err_out;
-    }
-    data_offset += fda_dsas_key_length;
-
-    ret = 0;
-
-err_out:
-    return ret;
-
-}
-
 int fda_disk_attach(fda_vsc_context_t *ctx,
-    const char *fda_activity_id,
-    uint32_t fda_activity_id_length,
-    const char *fda_vmid,
-    uint32_t fda_vmid_length,
     const char *fda_bloburl,
     uint32_t fda_bloburl_length,
-    const char *fda_dsas_key,
-    uint32_t fda_dsas_key_length)
+    uint32_t fda_lun_number)
 {
-    int status = FDA_OP_FAILED;
-    int ret = 0;
-    uint32_t data_length = 0;
-    fda_request_t *req = NULL;
+    int status = FDA_INVALID_STATUS;
+
+	struct xs_fastpath_request_sync request;
+	struct qad_request_buffer req_buffer;
+	struct qad_data_buffer data_buffer;
+	struct qad_response_buffer response_buffer;
+	int request_len = MAX_REQUEST_SIZE, data_len = MAX_RESPONSE_SIZE, response_len = MAX_RESPONSE_SIZE;
+	int count;
+	int bloblen = 0;
+	int ioctl_response = 0;
 
     if (ctx == NULL) {
         goto out;
     }
 
-    data_length = fda_activity_id_length    +
-                  fda_vmid_length           +
-                  fda_bloburl_length        +
-                  fda_dsas_key_length;
-    req = malloc(sizeof(fda_request_t) + data_length);
-    if (req == NULL) {
-        perror("unable to allocate request");
-        goto out;
-    }
+	memset(&request, 0, sizeof(request));
+	for (count=0; count<16; count++)
+		request.guid[count] = count;
+	request.timeout = 10000; // 10 sec timeout
 
-    req->fbi_magic = FDA_RQ_MAGIC;
-    req->fbi_version = FDA_RQ_VERSION;
-    req->fbi_rq_state = FDA_INVALID_REQUEST_STATE;
-    req->fbi_op = FDA_ATTACH;
-    req->fbi_op_status = FDA_OP_FAILED;
+	// initialize buffer with 0 values
+	request.request_len = request_len;
+	request.request_buffer = malloc(request.request_len);
+	memset(request.request_buffer, 0x0, request.request_len);
 
-    ret = fda_init_request(req,
-            fda_activity_id,
-            fda_activity_id_length,
-            fda_vmid,
-            fda_vmid_length,
-            fda_bloburl,
-            fda_bloburl_length,
-            fda_dsas_key,
-            fda_dsas_key_length);
-    if (ret < 0) {
-        goto out;
-    }
+	request.response_len = response_len;
+	request.response_buffer = malloc(request.response_len);
+	memset(request.response_buffer, 0x0, request.response_len);
 
-    /* XXX placeholder */
-    //ret = ioctl(ctx->fvc_fd, _IOWR(), req);
+	request.data_len = data_len;
+        request.data_valid = 1;
+	request.data_buffer = malloc(request.data_len);
+	memset(request.data_buffer, 0x0, request.data_len);
 
-    //XXX validate req->fbi_op_status;
+	//sample blob format
+	//"%NODE%/%ACCOUNT%/%CONTAINER%/%BLOBNAME%?sr=b&sk=system-1&sv=2014-02-14&sp=rw&se=9999-01-01,%DSASKEY%,0,%DOMAIN%"
+	//"XDISK:0.0.0.0/md-pbkwsw54zpvl/xppxscqhzxzg/abcd?sr=b&sp=rw&se=9999-01-01&sk=system-1&sv=2014-02-14,$rzSYNQOjz4Rjb5tFVk4O0JQuK2CeKCW/R4kfiGDWfjc=$,0,z44.blob.storage.azure.net"
 
-#ifdef MOCK_IOCTL
-    status = FDA_OP_SUCCEEDED;
-#endif
+	bloblen = strlen(fda_bloburl);
+	if(bloblen != fda_bloburl_length)
+	{
+		printf("blobstr length mismatch.");
+		return FDA_INVALID_STATUS;
+	}
+
+	printf("Bloburl length = %d\n", bloblen);
+	printf("Bloburl with DSAS key = %s\n", fda_bloburl);
+
+	// Init Request Buffer
+	// op_id = 1 for attach, op_id = 2 for detach operation
+	req_buffer.op_id = FDA_ATTACH; // 1 for attach op
+	req_buffer.lun_num = fda_lun_number;
+	memcpy(req_buffer.blobstr, fda_bloburl, strlen(fda_bloburl));
+	memcpy(request.request_buffer, &req_buffer, bloblen+8);
+
+    struct timespec ts1, ts2; // time latency calculation
+	clock_gettime(CLOCK_MONOTONIC, &ts1);
+
+	printf("Attach Op: Sending IOCTL to VSC driver\n");
+	ioctl_response = ioctl(ctx->fvc_fd, IOCTL_XS_FASTPATH_DRIVER_USER_REQUEST, &request);
+    printf("IOCTL response = %d errno %d\n", ioctl_response, errno);
+
+	clock_gettime(CLOCK_MONOTONIC, &ts2);
+    double qadLatencyMs = (1000.0*ts2.tv_sec + 1e-6*ts2.tv_nsec)
+                          - (1000.0*ts1.tv_sec + 1e-6*ts1.tv_nsec);
+
+	if (ioctl_response == 0)
+	{
+	    printf("IOCTL passed.\n");
+		printf("QAD latency for IOCTL_XS_FASTPATH_DRIVER_USER_REQUEST response: %.3f ms.\n", qadLatencyMs);
+		status = FDA_OP_SUCCEEDED;
+	}
+	else
+	{
+		perror("IOCTL failed.");
+		printf("IOCTL failed: %Return value status %0X response_len %u\n", request.response.status, request.response.response_len);
+		status = FDA_OP_FAILED;
+	}
 
 out:
-    if (req != NULL) {
-        free(req);
-    }
     return status;
 }
 
 int fda_disk_detach(fda_vsc_context_t *ctx,
-    const char *fda_activity_id,
-    uint32_t fda_activity_id_length,
-    const char *fda_vmid,
-    uint32_t fda_vmid_length,
     const char *fda_bloburl,
     uint32_t fda_bloburl_length,
-    const char *fda_dsas_key,
-    uint32_t fda_dsas_key_length)
+    uint32_t fda_lun_number)
 {
-    int status = FDA_OP_FAILED;
-    int ret = 0;
-    uint32_t data_length = 0;
-    fda_request_t *req = NULL;
+    int status = FDA_INVALID_STATUS;
+
+	struct xs_fastpath_request_sync request;
+	struct qad_request_buffer req_buffer;
+	struct qad_data_buffer data_buffer;
+	struct qad_response_buffer response_buffer;
+	int request_len = MAX_REQUEST_SIZE, data_len = MAX_RESPONSE_SIZE, response_len = MAX_RESPONSE_SIZE;
+	int count;
+	int bloblen = 0;
+	int ioctl_response = 0;
 
     if (ctx == NULL) {
         goto out;
     }
 
-    data_length = fda_activity_id_length    +
-                  fda_vmid_length           +
-                  fda_bloburl_length        +
-                  fda_dsas_key_length;
-    req = malloc(sizeof(fda_request_t) + data_length);
-    if (req == NULL) {
-        perror("unable to allocate request");
-        goto out;
-    }
+	memset(&request, 0, sizeof(request));
+	for (count=0; count<16; count++)
+		request.guid[count] = count;
+	request.timeout = 10000; // 10 sec timeout
 
-    req->fbi_magic = FDA_RQ_MAGIC;
-    req->fbi_version = FDA_RQ_VERSION;
-    req->fbi_rq_state = FDA_INVALID_REQUEST_STATE;
-    req->fbi_op = FDA_DETACH;
-    req->fbi_op_status = FDA_OP_FAILED;
+	// initialize buffer with 0 values
+	request.request_len = request_len;
+	request.request_buffer = malloc(request.request_len);
+	memset(request.request_buffer, 0x0, request.request_len);
 
-    ret = fda_init_request(req,
-            fda_activity_id,
-            fda_activity_id_length,
-            fda_vmid,
-            fda_vmid_length,
-            fda_bloburl,
-            fda_bloburl_length,
-            fda_dsas_key,
-            fda_dsas_key_length);
-    if (ret < 0) {
-        goto out;
-    }
+	request.response_len = response_len;
+	request.response_buffer = malloc(request.response_len);
+	memset(request.response_buffer, 0x0, request.response_len);
 
-    /* XXX placeholder */
-    //ret = ioctl(ctx->fvc_fd, _IOWR(), req);
+	request.data_len = data_len;
+        request.data_valid = 1;
+	request.data_buffer = malloc(request.data_len);
+	memset(request.data_buffer, 0x0, request.data_len);
 
-    //XXX validate req->fbi_op_status;
+	//sample blob format
+	//"%NODE%/%ACCOUNT%/%CONTAINER%/%BLOBNAME%?sr=b&sk=system-1&sv=2014-02-14&sp=rw&se=9999-01-01,%DSASKEY%,0,%DOMAIN%"
+	//"XDISK:0.0.0.0/md-pbkwsw54zpvl/xppxscqhzxzg/abcd?sr=b&sp=rw&se=9999-01-01&sk=system-1&sv=2014-02-14,$rzSYNQOjz4Rjb5tFVk4O0JQuK2CeKCW/R4kfiGDWfjc=$,0,z44.blob.storage.azure.net"
 
-#ifdef MOCK_IOCTL
-    status = FDA_OP_SUCCEEDED;
-#endif
+	bloblen = strlen(fda_bloburl);
+	if(bloblen != fda_bloburl_length)
+	{
+		printf("blobstr length mismatch.");
+		return FDA_INVALID_STATUS;
+	}
+
+	printf("Bloburl length = %d\n", bloblen);
+	printf("Bloburl with DSAS key = %s\n", fda_bloburl);
+
+	// Init Request Buffer
+	// op_id = 1 for attach, op_id = 2 for detach operation
+	req_buffer.op_id = FDA_DETACH; // 2 for detach op
+	req_buffer.lun_num = fda_lun_number;
+	memcpy(req_buffer.blobstr, fda_bloburl, strlen(fda_bloburl));
+	memcpy(request.request_buffer, &req_buffer, bloblen+8);
+
+    struct timespec ts1, ts2; // time latency calculation
+	clock_gettime(CLOCK_MONOTONIC, &ts1);
+
+	printf("Detach Op: Sending IOCTL to VSC driver\n");
+	ioctl_response = ioctl(ctx->fvc_fd, IOCTL_XS_FASTPATH_DRIVER_USER_REQUEST, &request);
+    printf("IOCTL response = %d errno %d\n", ioctl_response, errno);
+
+	clock_gettime(CLOCK_MONOTONIC, &ts2);
+    double qadLatencyMs = (1000.0*ts2.tv_sec + 1e-6*ts2.tv_nsec)
+                          - (1000.0*ts1.tv_sec + 1e-6*ts1.tv_nsec);
+
+	if (ioctl_response == 0)
+	{
+	    printf("IOCTL passed.\n");
+		printf("QAD latency for IOCTL_XS_FASTPATH_DRIVER_USER_REQUEST response: %.3f ms.\n", qadLatencyMs);
+		status = FDA_OP_SUCCEEDED;
+	}
+	else
+	{
+		perror("IOCTL failed.");
+		printf("IOCTL failed: %Return value status %0X response_len %u\n", request.response.status, request.response.response_len);
+		status = FDA_OP_FAILED;
+	}
 
 out:
-    if (req != NULL) {
-        free(req);
-    }
     return status;
-
 }
-
 
 void fda_vsc_cleanup(fda_vsc_context_t *ctx)
 {
@@ -236,8 +226,10 @@ void fda_vsc_cleanup(fda_vsc_context_t *ctx)
         return;
     }
 
+    printf("\nClosing Driver\n");
     if (ctx->fvc_fd > 0) {
         close(ctx->fvc_fd);
     }
-    free(ctx);
+
+	free(ctx);
 }

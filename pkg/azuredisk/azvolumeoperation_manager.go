@@ -79,7 +79,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	url := parseBlobURL(blobUrl, dsasHash)
 
 	klog.Infof("Initiate attach to host")
-	_, err = attachToHost(url, dsasHash)
+	err = hostAttachDetach(url, azVolumeOperation.Spec.Lun, azVolumeOperation.Spec.RequestedOperation)
 	if err != nil {
 		klog.Errorf("Error occured while attaching disk %s to host: %v", diskName, err)
 	}
@@ -87,7 +87,6 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	copyForUpdate := azVolumeOperation.DeepCopy()
 	copyForUpdate.Status = v1alpha1.AzVolumeOperationStatus{
 		// Todo: Remove the dummy lun value
-		Lun:   "0",
 		State: v1alpha1.VolumeAttached,
 	}
 	copyForUpdate.Spec = v1alpha1.AzVolumeOperationSpec{
@@ -107,7 +106,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 	if azVolumeOperationNew.Spec.RequestedOperation == v1alpha1.Detach && azVolumeOperationNew.Status.State == v1alpha1.VolumeAttached {
 		klog.V(2).Infof("Initiating detach for volume %s", azVolumeOperationNew.Spec.DiskURI)
 		//Todo: Make a call to host to detach
-		err := detachFromHost(azVolumeOperationNew.Spec.BlobURL, azVolumeOperationNew.Spec.DSASToken)
+		err := hostAttachDetach(azVolumeOperationNew.Spec.BlobURL, azVolumeOperationNew.Spec.Lun, azVolumeOperationNew.Spec.RequestedOperation)
 		diskName, _ := azureutils.GetDiskName(azVolumeOperationNew.Spec.DiskURI)
 		if err != nil {
 			klog.Errorf("Error occured while detaching disk %s from host: %v", diskName, err)

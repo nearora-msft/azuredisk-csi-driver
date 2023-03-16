@@ -55,6 +55,8 @@ type listVolumeStatus struct {
 	err           error
 }
 
+var luns = make([]bool, 0)
+
 // CreateVolume provisions an azure disk
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
@@ -400,6 +402,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		// Attach the disk to the node
 		volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
 
+		//Todo: Add concurrency handling here after POC.
+		lun := len(luns)
+		luns = append(luns, true)
+
 		volumeOperation := v1alpha1.AzVolumeOperation{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: volumeOperationName,
@@ -411,6 +417,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 			Spec: v1alpha1.AzVolumeOperationSpec{
 				DiskURI:            diskURI,
 				RequestedOperation: v1alpha1.Attach,
+				Lun:                lun,
 			},
 		}
 
@@ -430,11 +437,9 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 				return false, err
 			}
 			if vop.Status.State == v1alpha1.VolumeAttached {
-				val, err := strconv.ParseInt(vop.Status.Lun, 10, 32)
 				if err != nil {
 					return false, err
 				}
-				lun = int32(val)
 				return true, nil
 			}
 			return false, nil

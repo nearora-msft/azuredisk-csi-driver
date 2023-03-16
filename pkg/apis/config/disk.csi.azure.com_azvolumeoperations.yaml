@@ -47,6 +47,8 @@ spec:
                 type: string
               dsasToken:
                 type: string
+              lun:
+                type: integer
               requestedOperation:
                 type: string
             required:
@@ -55,12 +57,9 @@ spec:
             type: object
           status:
             properties:
-              lun:
-                type: string
               state:
                 type: string
             required:
-            - lun
             - state
             type: object
         required:
