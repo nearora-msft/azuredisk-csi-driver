@@ -137,5 +137,5 @@ func parseBlobURL(blobURL string, dsasHash string) string {
 	blob := blobAndTimestamp[:index]
 	timestamp := blobAndTimestamp[index:]
 
-	return account + "/" + container + "/" + blob + "/" + timestamp + "," + dsasHash + ",0," + domain
+	return "XDISK:0.0.0.0:8080/" + account + "/" + container + "/" + blob + timestamp + "," + dsasHash + ",0," + domain
 }

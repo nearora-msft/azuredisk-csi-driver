@@ -403,7 +403,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		volumeOperationName := azureutils.GetAzVolumeOperationName(diskName, nodeID)
 
 		//Todo: Add concurrency handling here after POC.
-		lun := len(luns)
+		lun := len(luns) + 2
 		luns = append(luns, true)
 
 		volumeOperation := v1alpha1.AzVolumeOperation{
