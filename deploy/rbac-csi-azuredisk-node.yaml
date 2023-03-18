@@ -18,7 +18,7 @@ rules:
     resources: ["nodes"]
     verbs: ["get"]
   - apiGroups: ["disk.csi.azure.com"]
-    resources: ["azvolumeoperations"]
+    resources: ["azvolumeoperations", "azvolumeoperations/status"]
     verbs: ["get", "list", "watch", "patch", "update"]
 
 ---

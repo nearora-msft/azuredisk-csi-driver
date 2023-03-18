@@ -97,10 +97,10 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	if err != nil {
 		klog.Errorf("failed to update AzvolumeOperation after attach with error: %v", err)
 	}
-	_, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
-	if err != nil {
-		klog.Errorf("failed to update AzvolumeOperation status after attach with error: %v", err)
-	}
+	// _, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
+	// if err != nil {
+	// 	klog.Errorf("failed to update AzvolumeOperation status after attach with error: %v", err)
+	// }
 
 	klog.Infof("Time taken in attach operation : %s", time.Since(startTime))
 }
