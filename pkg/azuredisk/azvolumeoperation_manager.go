@@ -60,6 +60,7 @@ func (mgr *AzVolumeOperationManager) Init(ctx context.Context) {
 }
 
 func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
+	startTime := time.Now()
 	azVolumeOperation := obj.(*v1alpha1.AzVolumeOperation)
 	diskURI := azVolumeOperation.Spec.DiskURI
 	klog.V(2).Infof("Initiating attach for volume %s", azVolumeOperation.Spec.DiskURI)
@@ -69,12 +70,12 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	subsID := azureutils.GetSubscriptionIDFromURI(diskURI)
 	resourceGroup, _ := azureutils.GetResourceGroupFromURI(diskURI)
 	diskName, _ := azureutils.GetDiskName(diskURI)
-	// diskRPStartTime := time.Now()
+	diskRPStartTime := time.Now()
 	blobUrl, dsasHash, err := mgr.diskClient.GetDSASToken(ctx, subsID, resourceGroup, diskName)
 	if err != nil {
 		klog.Errorf("Error occured while : %v", err)
 	}
-	// klog.Infof("Time passed since start for diskRP call : %s and the token is: %s", time.Since(diskRPStartTime), dSASToken)
+	klog.Infof("Time passed since start for diskRP call : %s", time.Since(diskRPStartTime))
 
 	url := parseBlobURL(blobUrl, dsasHash)
 
@@ -96,7 +97,12 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 	if err != nil {
 		klog.Errorf("failed to update AzvolumeOperation after attach with error: %v", err)
 	}
+	_, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{})
+	if err != nil {
+		klog.Errorf("failed to update AzvolumeOperation status after attach with error: %v", err)
+	}
 
+	klog.Infof("Time taken in attach operation : %s", time.Since(startTime))
 }
 
 func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{}, newObj interface{}) {
