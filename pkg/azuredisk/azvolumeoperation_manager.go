@@ -78,7 +78,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 
 	url := parseBlobURL(blobUrl, dsasHash)
 
-	klog.Infof("Initiate attach to host")
+	klog.Infof("Initiate attach to host with blobUrl: %s", url)
 	err = hostAttachDetach(url, azVolumeOperation.Spec.Lun, azVolumeOperation.Spec.RequestedOperation)
 	if err != nil {
 		klog.Errorf("Error occured while attaching disk %s to host: %v", diskName, err)
