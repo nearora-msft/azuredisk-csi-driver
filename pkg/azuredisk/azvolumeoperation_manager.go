@@ -105,7 +105,6 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 	azVolumeOperationNew := newObj.(*v1alpha1.AzVolumeOperation)
 	if azVolumeOperationNew.Spec.RequestedOperation == v1alpha1.Detach && azVolumeOperationNew.Status.State == v1alpha1.VolumeAttached {
 		klog.V(2).Infof("Initiating detach for volume %s", azVolumeOperationNew.Spec.DiskURI)
-		//Todo: Make a call to host to detach
 		err := hostAttachDetach(azVolumeOperationNew.Spec.BlobURL, azVolumeOperationNew.Spec.Lun, azVolumeOperationNew.Spec.RequestedOperation)
 		diskName, _ := azureutils.GetDiskName(azVolumeOperationNew.Spec.DiskURI)
 		if err != nil {
@@ -114,7 +113,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 
 		copyForUpdate := azVolumeOperationNew.DeepCopy()
 		copyForUpdate.Status.State = v1alpha1.VolumeDetached
-		if _, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).UpdateStatus(context.Background(), copyForUpdate, metav1.UpdateOptions{}); err != nil {
+		if _, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{}); err != nil {
 			klog.Errorf("failed to update AzvolumeOperation after detach with error: %v", err)
 		}
 	}
