@@ -10,7 +10,6 @@ import (
 // AzVolumeOperation is a specification for a AzVolumeOperation resource
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.State`,description="The attachment status of the VolumeOperation",priority=10
 type AzVolumeOperation struct {
 	metav1.TypeMeta   `json:",inline"`
