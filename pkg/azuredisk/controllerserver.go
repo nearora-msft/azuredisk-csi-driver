@@ -525,13 +525,6 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, status.Errorf(codes.Internal, "failed to detach volume %s from node %s with error: %v", diskName, nodeID, err)
 	}
 
-	copyForupdate = vop.DeepCopy()
-	copyForupdate.ObjectMeta.Finalizers = []string{}
-
-	if _, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForupdate, metav1.UpdateOptions{}); err != nil {
-		klog.Infof("failed to remove finalizers from volumeOperation %s with error: %v", volumeOperationName, err)
-	}
-
 	if err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Delete(context.Background(), volumeOperationName, metav1.DeleteOptions{}); err != nil {
 		klog.Infof("failed to delete volumeOperation %s with error: %v", volumeOperationName, err)
 	}

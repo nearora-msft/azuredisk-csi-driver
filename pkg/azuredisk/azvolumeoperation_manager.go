@@ -113,6 +113,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationUpdate(oldObj interface{
 
 		copyForUpdate := azVolumeOperationNew.DeepCopy()
 		copyForUpdate.Status.State = v1alpha1.VolumeDetached
+		copyForUpdate.ObjectMeta.Finalizers = []string{}
 		if _, err := mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{}); err != nil {
 			klog.Errorf("failed to update AzvolumeOperation after detach with error: %v", err)
 		}
