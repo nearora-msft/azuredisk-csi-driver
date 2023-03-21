@@ -124,3 +124,12 @@ func (mr *MockInterfaceMockRecorder) Update(ctx, subsID, resourceGroupName, disk
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockInterface)(nil).Update), ctx, subsID, resourceGroupName, diskName, diskParameter)
 }
+
+func (m *MockInterface) GetDSASToken(ctx context.Context, subsID, resourceGroupName, diskName string) (dSASToken string, dSASHash string, err error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginGetAccess", ctx, subsID, resourceGroupName, diskName)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}

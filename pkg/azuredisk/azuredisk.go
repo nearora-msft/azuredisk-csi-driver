@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/mount-utils"
 
+	azdisk "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 	csicommon "sigs.k8s.io/azuredisk-csi-driver/pkg/csi-common"
@@ -117,6 +118,7 @@ type Driver struct {
 	volumeLocks *volumehelper.VolumeLocks
 	// a timed cache GetDisk throttling
 	getDiskThrottlingCache *azcache.TimedCache
+	crdClienSet            azdisk.Interface
 }
 
 // newDriverV1 Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
@@ -177,10 +179,27 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 	d.cloud = cloud
 	d.kubeconfig = kubeconfig
 
+	// Initialise CRD clientset
+	if d.crdClienSet == nil {
+		client, err := azureutils.GetKubeConfig(kubeconfig)
+		if err != nil {
+			klog.Fatalf("failed to get kubeconfig with error: %v", err)
+		}
+		clientSet, err := azdisk.NewForConfig(client)
+		if err != nil {
+			klog.Fatalf("failed to get clientset with error: %v", err)
+		}
+		d.crdClienSet = clientSet
+	}
+
 	if d.vmType != "" {
 		klog.V(2).Infof("override VMType(%s) in cloud config as %s", d.cloud.VMType, d.vmType)
 		d.cloud.VMType = d.vmType
 	}
+
+	ctxRoot := context.Background()
+	ctx, cancel := context.WithCancel(ctxRoot)
+	defer cancel()
 
 	if d.NodeID == "" {
 		// Disable UseInstanceMetadata for controller to mitigate a timeout issue using IMDS
@@ -198,6 +217,9 @@ func (d *Driver) Run(endpoint, kubeconfig string, disableAVSetNodes, testingMock
 			d.cloud.DisableAvailabilitySetNodes = true
 		}
 		klog.V(2).Infof("cloud: %s, location: %s, rg: %s, VMType: %s, PrimaryScaleSetName: %s, PrimaryAvailabilitySetName: %s, DisableAvailabilitySetNodes: %v", d.cloud.Cloud, d.cloud.Location, d.cloud.ResourceGroup, d.cloud.VMType, d.cloud.PrimaryScaleSetName, d.cloud.PrimaryAvailabilitySetName, d.cloud.DisableAvailabilitySetNodes)
+	} else {
+		azVolumeOperationManager := NewAzVolumeOperationManager(d.crdClienSet, d.NodeID, d.cloud.DisksClient)
+		azVolumeOperationManager.Init(ctx)
 	}
 
 	if d.vmssCacheTTLInSeconds > 0 {

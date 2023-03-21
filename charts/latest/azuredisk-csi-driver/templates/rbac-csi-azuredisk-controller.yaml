@@ -32,6 +32,9 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "watch", "list", "delete", "update", "create", "patch"]
+  - apiGroups: ["disk.csi.azure.com"]
+    resources: ["azvolumeoperations"]
+    verbs: ["get", "list", "watch", "delete", "update", "create", "patch"]
 
 ---
 

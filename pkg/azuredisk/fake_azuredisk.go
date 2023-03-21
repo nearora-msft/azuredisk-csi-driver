@@ -28,6 +28,7 @@ import (
 	"k8s.io/mount-utils"
 	testingexec "k8s.io/utils/exec/testing"
 
+	azdiskfakes "sigs.k8s.io/azuredisk-csi-driver/pkg/apis/client/clientset/versioned/fake"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
 	csicommon "sigs.k8s.io/azuredisk-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/mounter"
@@ -111,6 +112,7 @@ func newFakeDriverV1(t *testing.T) (*fakeDriverV1, error) {
 	driver.ioHandler = azureutils.NewFakeIOHandler()
 	driver.hostUtil = azureutils.NewFakeHostUtil()
 	driver.useCSIProxyGAInterface = true
+	driver.crdClienSet = azdiskfakes.NewSimpleClientset()
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

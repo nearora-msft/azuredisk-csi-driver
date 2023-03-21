@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 	clientset "k8s.io/client-go/kubernetes"
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
+	"sigs.k8s.io/azuredisk-csi-driver/test/utils/testutil"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/diskclient/mockdiskclient"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
@@ -75,6 +76,46 @@ func TestRun(t *testing.T) {
     "resourceGroup": "rg1",
     "location": "loc"
 }`
+	fakeKubeConfig, err := testutil.GetWorkDirPath("fake-kube-config")
+	if err != nil {
+		t.Errorf("GetWorkDirPath failed with %v", err)
+	}
+
+	fakeContent := `
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://localhost:8080
+  name: foo-cluster
+contexts:
+- context:
+   cluster: foo-cluster
+   user: foo-user
+   namespace: bar
+  name: foo-context
+current-context: foo-context
+kind: Config
+users:
+- name: foo-user
+  user:
+   exec:
+    apiVersion: client.authentication.k8s.io/v1beta1
+    args:
+    - arg-1
+    - arg-2
+    command: foo-command
+`
+
+	if err := createTestFile(fakeKubeConfig); err != nil {
+		t.Error(err)
+	}
+	defer func() {
+		os.Remove(fakeKubeConfig)
+	}()
+
+	if err := ioutil.WriteFile(fakeKubeConfig, []byte(fakeContent), 0666); err != nil {
+		t.Error(err)
+	}
 
 	testCases := []struct {
 		name     string
@@ -102,7 +143,7 @@ func TestRun(t *testing.T) {
 				os.Setenv(consts.DefaultAzureCredentialFileEnv, fakeCredFile)
 
 				d, _ := NewFakeDriver(t)
-				d.Run("tcp://127.0.0.1:0", "", true, true)
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
 			},
 		},
 		{
@@ -129,7 +170,7 @@ func TestRun(t *testing.T) {
 				d, _ := NewFakeDriver(t)
 				d.setCloud(&azure.Cloud{})
 				d.setNodeID("")
-				d.Run("tcp://127.0.0.1:0", "", true, true)
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
 			},
 		},
 		{
@@ -162,7 +203,7 @@ func TestRun(t *testing.T) {
 					VMSSCacheTTLInSeconds:  10,
 					VMType:                 "vmss",
 				})
-				d.Run("tcp://127.0.0.1:0", "", true, true)
+				d.Run("tcp://127.0.0.1:0", fakeKubeConfig, true, true)
 			},
 		},
 	}
@@ -259,4 +300,14 @@ func TestGetDefaultDiskMBPSReadWrite(t *testing.T) {
 			t.Errorf("Unexpected result: %v, expected result: %v, input: %d", result, test.expected, test.requestGiB)
 		}
 	}
+}
+
+func createTestFile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return nil
 }

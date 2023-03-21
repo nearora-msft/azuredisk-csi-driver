@@ -85,6 +85,10 @@ const (
 	SourceResourceID              = "source_resource_id"
 	SnapshotName                  = "snapshot_name"
 	SnapshotID                    = "snapshot_id"
+	VolumeOperationManagedBy      = "disk.csi.azure.com/managed-by"
+	AzVolumeOperationFinalizer    = "disk.csi.azure.com/azvolumeoperation-finalizer"
+	DefaultCustomObjectNamespace  = "kube-system"
+
 	// define different sleep time when hit throttling
 	SnapshotOpThrottlingSleepSec = 50
 )

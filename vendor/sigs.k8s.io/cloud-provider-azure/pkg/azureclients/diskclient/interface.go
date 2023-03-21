@@ -26,7 +26,7 @@ import (
 
 const (
 	// APIVersion is the API version for compute.
-	APIVersion = "2021-04-01"
+	APIVersion = "2022-03-02"
 	// AzureStackCloudAPIVersion is the API version for Azure Stack
 	AzureStackCloudAPIVersion = "2019-03-01"
 	// AzureStackCloudName is the cloud name of Azure Stack
@@ -50,4 +50,7 @@ type Interface interface {
 
 	// ListByResourceGroup lists all the disks under a resource group.
 	ListByResourceGroup(ctx context.Context, subsID, resourceGroupName string) ([]compute.Disk, *retry.Error)
+
+	// Get DSAS for Disk Attach
+	GetDSASToken(ctx context.Context, subsID, resourceGroupName, diskName string) (dSASToken string, dSASHash string, err error)
 }
