@@ -425,29 +425,34 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		vop, err := d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Create(context.Background(), &volumeOperation, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
-				return nil, status.Errorf(codes.Aborted, fmt.Sprintf("An operation for this volume %s is already in progress", diskName))
+				// If the volume is already attached set the right value of the lun, else return
+				if vop.Status.State == v1alpha1.VolumeAttached {
+					lun = int32(vop.Spec.Lun)
+				} else {
+					return nil, status.Errorf(codes.Aborted, fmt.Sprintf("An operation for this volume %s is already in progress", diskName))
+				}
 			}
 			return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to create azvolumeOperation for volume %s on node %s with error: %v", diskName, nodeID, err))
-		}
-
-		conditionFunc := func() (bool, error) {
-			var err error
-			vop, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperation.Name, metav1.GetOptions{})
-			if err != nil {
-				return false, err
-			}
-			if vop.Status.State == v1alpha1.VolumeAttached {
+		} else {
+			conditionFunc := func() (bool, error) {
+				var err error
+				vop, err = d.crdClienSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Get(context.Background(), volumeOperation.Name, metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
-				return true, nil
+				if vop.Status.State == v1alpha1.VolumeAttached {
+					if err != nil {
+						return false, err
+					}
+					return true, nil
+				}
+				return false, nil
 			}
-			return false, nil
-		}
 
-		err = wait.PollImmediate(500*time.Millisecond, 10*time.Second, conditionFunc)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to attach volume %s on node %s with error: %v", diskName, nodeID, err))
+			err = wait.PollImmediate(500*time.Millisecond, 10*time.Second, conditionFunc)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, fmt.Sprintf("failed to attach volume %s on node %s with error: %v", diskName, nodeID, err))
+			}
 		}
 	}
 

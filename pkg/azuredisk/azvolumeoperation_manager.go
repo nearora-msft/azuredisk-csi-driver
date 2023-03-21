@@ -90,7 +90,7 @@ func (mgr *AzVolumeOperationManager) onAzVolumeOperationAdd(obj interface{}) {
 		// Todo: Remove the dummy lun value
 		State: v1alpha1.VolumeAttached,
 	}
-	copyForUpdate.Spec.BlobURL = blobUrl
+	copyForUpdate.Spec.BlobURL = url
 	copyForUpdate.Spec.DSASToken = dsasHash
 
 	_, err = mgr.clientSet.DiskV1alpha1().AzVolumeOperations(azureconstants.DefaultCustomObjectNamespace).Update(context.Background(), copyForUpdate, metav1.UpdateOptions{})
