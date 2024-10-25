@@ -29,14 +29,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
+	"net/http"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	cloudprovider "k8s.io/cloud-provider"
-	volerr "k8s.io/cloud-provider/volume/errors"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
@@ -452,129 +452,158 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 
 // ControllerPublishVolume attach an azure disk to a required node
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	diskURI := req.GetVolumeId()
-	if len(diskURI) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID not provided")
-	}
+	println("Inside ControllerPublishVolume to attach a disk")
 
-	volCap := req.GetVolumeCapability()
-	if volCap == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume capability not provided")
-	}
+	client := http.Client{}
+	body := `{ "/subscriptions/d64ddb0c-7399-4529-a2b6-037b33265372/resourceGroups/mc_shlok-test-wus2_acstor-service-health_westus2/providers/Microsoft.Compute/disks/pvc-00166756-243b-4f19-80fa-296dcb9108ce": {
+					"qadCounter": "1",
+					"action": "ATTACH",
+					"cachePolicy": "NONE"
+				}				
+			}`
 
-	caps := []*csi.VolumeCapability{volCap}
-	maxShares, err := azureutils.GetMaxShares(req.GetVolumeContext())
+	request, err := http.NewRequest("POST", "http://168.63.129.16/vmservice/diskstate", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-ms-version", "2020-04-08")
+	request.Header.Set("x-ms-transitiveBearerToken", "5KeoOrseCcVzI=kiEBuoAHy/gEbZNntbSyGL6S3bV6eGN=1L/5f5AXNyfRSrnllyC8IxviMGCTIhMvQVRK!6U62QC6DY3WnTZylTvyU7OxtQjWadQHmKzMcDT7QyEXnX=BH/RIUB!AH0nN8L=2f8YwTCyC3QyxIsBbv4QpG3J6Gk/0bI7uBjoNRQQB2?UivwTWdiVgfPdE8BlryJf26?wEGjJVdR59x7=P/iEP/JqMvdhHE8ZHBxm8ugfhy-Px2FOwjeSjOGf/wvxyKPuKgm7=aTaQzy3zwaBhCfXLHPM-yBlbqc9gIGsQAYqIRJskO!n!7J6zp21vbRynekUj4Kk1KhdPlWkvkU89ERxrrt?4C25oPnsZQHIb/t2QeBXX/Jv?ZWFvuxusv7CrazSE02=GQTkvMVB?extOpz?NiaIRC2UrwLWpEyq/Nd8!JOl5StDysI?Nsa87j4uE19iAqmasKp38P4Fh3lDsW3ckU5KoBj/NVI3/6TBCYu2GF!c/XtuVbxkaUVS/g2h9C78ga=dbf/qODVdKOJuRFdG93SK?HTIR!7gULuzcSsivrLMAQBq!G5MMA4CqkJktZkwPYCEVdCkuNj!m/=qAfSxVwjI6ELarYJUvLgctV1am=?9EvOMSzAT?Z2G8AC2BBzNGIFtrk4eU?ROVTm9ivCREU2i?S?2dq=5kboh7E=jHh2JFGs=5VB!K0-vx2wxOzR71Ms/OYAdH84aADVumlngttYXq=s=0?s4rClC6K/?QL-Y2?j6StRQVDHdw4n8YXfKQp3A/Izdpf1q-KJavZcVZmeSMPIUbQRUBOpI-mLWWr3DDpsa6YuOE/gs/7p=iya78z3CmCqS-FpzQjy5zL-gEVsS3iLbPQLmzj?8YVkZOILc?zPRtAeAZTKkwSjEBM/8spzavc0maNWqm2w3nof6Ss0JRjcx4j=6zNpB65tp/cc78UwGtpl=7aN1p5OfW6!1nOhHJ0XX!qF9FuY8qVuSx8ZWh-E9lYh7gP85ofB!cyv4rt1yzFbB!I7kbHMRnTmYkIJ23!liCHZTkZ6Ip6msM3n?4H3C1pRQvKX5DB3ylCQtkhweiqFu4LC6070BBNeWD9jRxc32BLNQC97sjLJRivikyLEwcelgXl67AfTu-QejHXXItR!B8K-PKia9GPYkUPmDV/UBpUC!WQmEopiR5xd/-Qlcle2pvYSVr5CypzSvX7jMl5uAUqlEcIDzG5nqkE-JJG6=y!JjKEVJm5E7dxG8rGmAc0SK2FWlAtFW!mxxJDxGPz0hNI?TMkoVVwhDDbfwp2Jmpgb1Oez1rADkbrfOHFL618!6vRNvmdT4mBCbOgP=gYl5BZKmb4wyEIopua3KgL-7vEduHyU7KuOlNc?U9vN?Q-0tKMakmIzjmQX7BBgI2TRDbn252ue!vqkXkIU?DTMqUp7qOxdW5DZnbWea4hnQpwrzHwfXdcMPJq5zKR0Vgu9PkYobCcFvE6myYv8ko=BWJWO-P6m79=ENzQjz0EsmEZyk5HFjDMdrqe-5wsNe2T3ini=NPik!LhLAnox/0wJQtotnDGTN23Yd/NuXKnrN!0wxFfWR?Ybh4vjdq?bigNVDpQ/W=19XAwSK6/2nT91BePIF82i6=rxCAr!AMHYlytwdfJyRzk/zDB7MQfvFECy0bVbO9Zt0XZ21VbKXmM8lBFEzpaD805Jt?6QqgeL7V7=M2n7ghO64U1MnAtBxhWwuFesygNe-Df70NJt48Mu?4W8UBuIOuchfMOOVRl5y=a3rqpBZDeDpd98VlKnqyfulTWqeb!OmT7dxsk2xCuYbuwb4o/DZZBv1efJE=-hw3hB6uZk8S1NU4hb4Rs14w-l9l-a0lCL1yWIVLj3Zb1AFvFB7AgCHPK7PoJ9QNo9JLhp9JYd/z?=W-qnEgjm?SJc!mvrGTNF=g71GWsLVCx9Kkh5zysf6bdAVGZB/?MU6H0zcHt9Gkdo25TbM!qWw3vhXV6pqm1bcMaVNoa93CV!NRlqn16vXqiRBVHTjg8yvLBnq?FIXy!-DjK1=gJk")
+
+	resp, err := client.Do(request)
+
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "MaxShares value not supported")
+		klog.Infof("Error: %v", err)
 	}
 
-	if err := azureutils.IsValidVolumeCapabilities(caps, maxShares); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
+	defer resp.Body.Close()
 
-	disk, err := d.checkDiskExists(ctx, diskURI)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("Volume not found, failed with error: %v", err))
-	}
+	klog.Infof("Response: %v", resp)
 
-	nodeID := req.GetNodeId()
-	if len(nodeID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Node ID not provided")
-	}
-
-	nodeName := types.NodeName(nodeID)
-	diskName, err := azureutils.GetDiskName(diskURI)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%v", err)
-	}
-
-	mc := metrics.NewMetricContext(consts.AzureDiskCSIDriverName, "controller_publish_volume", d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
-	isOperationSucceeded := false
-	defer func() {
-		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI, consts.Node, string(nodeName))
-	}()
-
-	lun, vmState, err := d.diskController.GetDiskLun(diskName, diskURI, nodeName)
-	if err == cloudprovider.InstanceNotFound {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("failed to get azure instance id for node %q (%v)", nodeName, err))
-	}
-
-	vmStateStr := "<nil>"
-	if vmState != nil {
-		vmStateStr = *vmState
-	}
-
-	klog.V(2).Infof("GetDiskLun returned: %v. Initiating attaching volume %s to node %s (vmState %s).", err, diskURI, nodeName, vmStateStr)
-
-	volumeContext := req.GetVolumeContext()
-	if volumeContext == nil {
-		volumeContext = map[string]string{}
-	}
-
-	if err == nil {
-		if vmState != nil && strings.ToLower(*vmState) == "failed" {
-			klog.Warningf("VM(%s) is in failed state, update VM first", nodeName)
-			if err := d.diskController.UpdateVM(ctx, nodeName); err != nil {
-				return nil, status.Errorf(codes.Internal, "update instance %q failed with %v", nodeName, err)
-			}
-		}
-		// Volume is already attached to node.
-		klog.V(2).Infof("Attach operation is successful. volume %s is already attached to node %s at lun %d.", diskURI, nodeName, lun)
-	} else {
-		if !strings.Contains(err.Error(), azureconsts.CannotFindDiskLUN) {
-			return nil, status.Errorf(codes.Internal, "could not get disk lun for volume %s: %v", diskURI, err)
-		}
-		var cachingMode armcompute.CachingTypes
-		if cachingMode, err = azureutils.GetCachingMode(volumeContext); err != nil {
-			return nil, status.Errorf(codes.Internal, "%v", err)
-		}
-
-		occupiedLuns := d.getOccupiedLunsFromNode(ctx, nodeName, diskURI)
-		klog.V(2).Infof("Trying to attach volume %s to node %s", diskURI, nodeName)
-
-		attachDiskInitialDelay := azureutils.GetAttachDiskInitialDelay(volumeContext)
-		if attachDiskInitialDelay > 0 {
-			klog.V(2).Infof("attachDiskInitialDelayInMs is set to %d", attachDiskInitialDelay)
-			d.diskController.AttachDetachInitialDelayInMs = attachDiskInitialDelay
-		}
-		lun, err = d.diskController.AttachDisk(ctx, diskName, diskURI, nodeName, cachingMode, disk, occupiedLuns)
-		if err == nil {
-			klog.V(2).Infof("Attach operation successful: volume %s attached to node %s.", diskURI, nodeName)
-		} else {
-			if derr, ok := err.(*volerr.DanglingAttachError); ok {
-				if strings.EqualFold(string(nodeName), string(derr.CurrentNode)) {
-					err := status.Errorf(codes.Internal, "volume %s is actually attached to current node %s, return error", diskURI, nodeName)
-					klog.Warningf("%v", err)
-					return nil, err
-				}
-				klog.Warningf("volume %s is already attached to node %s, try detach first", diskURI, derr.CurrentNode)
-				if err = d.diskController.DetachDisk(ctx, diskName, diskURI, derr.CurrentNode); err != nil {
-					return nil, status.Errorf(codes.Internal, "Could not detach volume %s from node %s: %v", diskURI, derr.CurrentNode, err)
-				}
-				klog.V(2).Infof("Trying to attach volume %s to node %s again", diskURI, nodeName)
-				lun, err = d.diskController.AttachDisk(ctx, diskName, diskURI, nodeName, cachingMode, disk, occupiedLuns)
-			}
-			if err != nil {
-				klog.Errorf("Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
-				errMsg := fmt.Sprintf("Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
-				if len(errMsg) > maxErrMsgLength {
-					errMsg = errMsg[:maxErrMsgLength]
-				}
-				return nil, status.Errorf(codes.Internal, "%v", errMsg)
-			}
-		}
-		klog.V(2).Infof("attach volume %s to node %s successfully", diskURI, nodeName)
-	}
-
-	publishContext := map[string]string{consts.LUN: strconv.Itoa(int(lun))}
-	if disk != nil {
-		if _, ok := volumeContext[consts.RequestedSizeGib]; !ok {
-			klog.V(6).Infof("found static PV(%s), insert disk properties to volumeattachments", diskURI)
-			azureutils.InsertDiskProperties(disk, publishContext)
-		}
-	}
-	isOperationSucceeded = true
+	publishContext := map[string]string{consts.LUN: strconv.Itoa(1)}
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
+
+	// diskURI := req.GetVolumeId()
+	// if len(diskURI) == 0 {
+	// 	return nil, status.Error(codes.InvalidArgument, "Volume ID not provided")
+	// }
+
+	// volCap := req.GetVolumeCapability()
+	// if volCap == nil {
+	// 	return nil, status.Error(codes.InvalidArgument, "Volume capability not provided")
+	// }
+
+	// caps := []*csi.VolumeCapability{volCap}
+	// maxShares, err := azureutils.GetMaxShares(req.GetVolumeContext())
+	// if err != nil {
+	// 	return nil, status.Error(codes.InvalidArgument, "MaxShares value not supported")
+	// }
+
+	// if err := azureutils.IsValidVolumeCapabilities(caps, maxShares); err != nil {
+	// 	return nil, status.Error(codes.InvalidArgument, err.Error())
+	// }
+
+	// disk, err := d.checkDiskExists(ctx, diskURI)
+	// if err != nil {
+	// 	return nil, status.Error(codes.NotFound, fmt.Sprintf("Volume not found, failed with error: %v", err))
+	// }
+
+	// nodeID := req.GetNodeId()
+	// if len(nodeID) == 0 {
+	// 	return nil, status.Error(codes.InvalidArgument, "Node ID not provided")
+	// }
+
+	// nodeName := types.NodeName(nodeID)
+	// diskName, err := azureutils.GetDiskName(diskURI)
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.Internal, "%v", err)
+	// }
+
+	// mc := metrics.NewMetricContext(consts.AzureDiskCSIDriverName, "controller_publish_volume", d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
+	// isOperationSucceeded := false
+	// defer func() {
+	// 	mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI, consts.Node, string(nodeName))
+	// }()
+
+	// lun, vmState, err := d.diskController.GetDiskLun(diskName, diskURI, nodeName)
+	// if err == cloudprovider.InstanceNotFound {
+	// 	return nil, status.Error(codes.NotFound, fmt.Sprintf("failed to get azure instance id for node %q (%v)", nodeName, err))
+	// }
+
+	// vmStateStr := "<nil>"
+	// if vmState != nil {
+	// 	vmStateStr = *vmState
+	// }
+
+	// klog.V(2).Infof("GetDiskLun returned: %v. Initiating attaching volume %s to node %s (vmState %s).", err, diskURI, nodeName, vmStateStr)
+
+	// volumeContext := req.GetVolumeContext()
+	// if volumeContext == nil {
+	// 	volumeContext = map[string]string{}
+	// }
+
+	// if err == nil {
+	// 	if vmState != nil && strings.ToLower(*vmState) == "failed" {
+	// 		klog.Warningf("VM(%s) is in failed state, update VM first", nodeName)
+	// 		if err := d.diskController.UpdateVM(ctx, nodeName); err != nil {
+	// 			return nil, status.Errorf(codes.Internal, "update instance %q failed with %v", nodeName, err)
+	// 		}
+	// 	}
+	// 	// Volume is already attached to node.
+	// 	klog.V(2).Infof("Attach operation is successful. volume %s is already attached to node %s at lun %d.", diskURI, nodeName, lun)
+	// } else {
+	// 	if !strings.Contains(err.Error(), azureconsts.CannotFindDiskLUN) {
+	// 		return nil, status.Errorf(codes.Internal, "could not get disk lun for volume %s: %v", diskURI, err)
+	// 	}
+	// 	var cachingMode armcompute.CachingTypes
+	// 	if cachingMode, err = azureutils.GetCachingMode(volumeContext); err != nil {
+	// 		return nil, status.Errorf(codes.Internal, "%v", err)
+	// 	}
+
+	// 	occupiedLuns := d.getOccupiedLunsFromNode(ctx, nodeName, diskURI)
+	// 	klog.V(2).Infof("Trying to attach volume %s to node %s", diskURI, nodeName)
+
+	// 	attachDiskInitialDelay := azureutils.GetAttachDiskInitialDelay(volumeContext)
+	// 	if attachDiskInitialDelay > 0 {
+	// 		klog.V(2).Infof("attachDiskInitialDelayInMs is set to %d", attachDiskInitialDelay)
+	// 		d.diskController.AttachDetachInitialDelayInMs = attachDiskInitialDelay
+	// 	}
+	// 	lun, err = d.diskController.AttachDisk(ctx, diskName, diskURI, nodeName, cachingMode, disk, occupiedLuns)
+	// 	if err == nil {
+	// 		klog.V(2).Infof("Attach operation successful: volume %s attached to node %s.", diskURI, nodeName)
+	// 	} else {
+	// 		if derr, ok := err.(*volerr.DanglingAttachError); ok {
+	// 			if strings.EqualFold(string(nodeName), string(derr.CurrentNode)) {
+	// 				err := status.Errorf(codes.Internal, "volume %s is actually attached to current node %s, return error", diskURI, nodeName)
+	// 				klog.Warningf("%v", err)
+	// 				return nil, err
+	// 			}
+	// 			klog.Warningf("volume %s is already attached to node %s, try detach first", diskURI, derr.CurrentNode)
+	// 			if err = d.diskController.DetachDisk(ctx, diskName, diskURI, derr.CurrentNode); err != nil {
+	// 				return nil, status.Errorf(codes.Internal, "Could not detach volume %s from node %s: %v", diskURI, derr.CurrentNode, err)
+	// 			}
+	// 			klog.V(2).Infof("Trying to attach volume %s to node %s again", diskURI, nodeName)
+	// 			lun, err = d.diskController.AttachDisk(ctx, diskName, diskURI, nodeName, cachingMode, disk, occupiedLuns)
+	// 		}
+	// 		if err != nil {
+	// 			klog.Errorf("Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
+	// 			errMsg := fmt.Sprintf("Attach volume %s to instance %s failed with %v", diskURI, nodeName, err)
+	// 			if len(errMsg) > maxErrMsgLength {
+	// 				errMsg = errMsg[:maxErrMsgLength]
+	// 			}
+	// 			return nil, status.Errorf(codes.Internal, "%v", errMsg)
+	// 		}
+	// 	}
+	// 	klog.V(2).Infof("attach volume %s to node %s successfully", diskURI, nodeName)
+	// }
+
+	// publishContext := map[string]string{consts.LUN: strconv.Itoa(int(lun))}
+	// if disk != nil {
+	// 	if _, ok := volumeContext[consts.RequestedSizeGib]; !ok {
+	// 		klog.V(6).Infof("found static PV(%s), insert disk properties to volumeattachments", diskURI)
+	// 		azureutils.InsertDiskProperties(disk, publishContext)
+	// 	}
+	// }
+	// isOperationSucceeded = true
+	// publishContext := map[string]string{consts.LUN: strconv.Itoa(1))}
+	// return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
 // ControllerUnpublishVolume detach an azure disk from a required node
