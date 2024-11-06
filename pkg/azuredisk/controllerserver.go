@@ -456,7 +456,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 
 	client := http.Client{}
 	body := `{ "/subscriptions/d64ddb0c-7399-4529-a2b6-037b33265372/resourceGroups/mc_shlok-test-wus2_acstor-service-health_westus2/providers/Microsoft.Compute/disks/pvc-00166756-243b-4f19-80fa-296dcb9108ce": {
-					"qadCounter": "1",
+					"qadCounter": 1,
 					"action": "ATTACH",
 					"cachePolicy": "NONE"
 				}				
