@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -58,7 +59,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/metadata/metadatainformer"
-	"k8s.io/client-go/tools/cache"
 
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
@@ -185,6 +185,11 @@ type Driver struct {
 	informerFactory informers.SharedInformerFactory
 	pvLister        corelisters.PersistentVolumeLister
 	pvListerSynced  cache.InformerSynced
+	// owning AKS cluster ARM ID, resolved once from node resource group tags and reused thereafter
+	clusterResourceID     string
+	clusterResourceIDLock sync.Mutex
+	// interval between Azure async operation polls; defaults to 5s when unset
+	pollInterval time.Duration
 }
 
 // NewDriver Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
@@ -504,6 +509,8 @@ func (d *Driver) Run(ctx context.Context) error {
 			klog.V(2).Infof("metadata node informer cache synced successfully")
 		}
 		klog.V(2).Infof("started metadata node informer for GetNodeInfoFromLabels caching")
+	}
+
 	// Start informer factory if initialized
 	if d.informerFactory != nil {
 		d.informerFactory.Start(ctx.Done())
