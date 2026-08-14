@@ -58,7 +58,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/metadata/metadatainformer"
-	"k8s.io/client-go/tools/cache"
 
 	consts "sigs.k8s.io/azuredisk-csi-driver/pkg/azureconstants"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/azureutils"
@@ -504,6 +503,8 @@ func (d *Driver) Run(ctx context.Context) error {
 			klog.V(2).Infof("metadata node informer cache synced successfully")
 		}
 		klog.V(2).Infof("started metadata node informer for GetNodeInfoFromLabels caching")
+	}
+
 	// Start informer factory if initialized
 	if d.informerFactory != nil {
 		d.informerFactory.Start(ctx.Done())
